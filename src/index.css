@@ -1,0 +1,98 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Black Ops One", "Impact", sans-serif;
+  --font-ui: "Rajdhani", "Trebuchet MS", sans-serif;
+  --color-abyss: #030b12;
+  --color-deck: #071823;
+  --color-panel: #0a2230;
+  --color-foam: #bfeef2;
+  --color-radar: #29e0d2;
+  --color-amber-hud: #ffb347;
+  --color-ember: #ff7a1a;
+  --color-blood: #ff3b30;
+  --color-kelp: #3dffb0;
+}
+
+html, body, #root {
+  height: 100%;
+  overflow: hidden;
+  background: #030b12;
+  font-family: var(--font-ui);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+canvas.game3d { display: block; width: 100%; height: 100%; cursor: crosshair; }
+
+/* ---------- HUD panels ---------- */
+.hud-panel {
+  background: linear-gradient(160deg, rgba(6, 24, 34, 0.88), rgba(3, 12, 19, 0.82));
+  border: 1px solid rgba(41, 224, 210, 0.28);
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.55), 0 8px 28px rgba(0,0,0,0.45), inset 0 0 18px rgba(41,224,210,0.05);
+  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+}
+.hud-panel-amber { border-color: rgba(255, 179, 71, 0.4); }
+.hud-title { font-family: var(--font-display); letter-spacing: 0.08em; }
+
+.bar-track { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.14); }
+.bar-fill { transition: width 0.18s ease-out; }
+
+/* ---------- animations ---------- */
+@keyframes msgIn { 0% { transform: translateY(14px) scale(0.94); opacity: 0; } 100% { transform: translateY(0) scale(1); opacity: 1; } }
+.msg-in { animation: msgIn 0.22s cubic-bezier(0.2, 1.4, 0.4, 1) both; }
+
+@keyframes msgOut { to { opacity: 0; transform: translateY(-10px); } }
+.msg-out { animation: msgOut 0.4s ease-in both; }
+
+@keyframes dmgFlash { 0% { opacity: 0.85; } 100% { opacity: 0; } }
+.dmg-flash { animation: dmgFlash 0.45s ease-out both; }
+
+@keyframes hitPop { 0% { transform: scale(0.6); opacity: 1; } 100% { transform: scale(1.7); opacity: 0; } }
+.hit-pop { animation: hitPop 0.3s ease-out both; }
+
+@keyframes blinkRed { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+.blink-red { animation: blinkRed 0.7s steps(2, start) infinite; }
+
+@keyframes pulseGlow { 0%, 100% { text-shadow: 0 0 12px rgba(255,179,71,0.7); } 50% { text-shadow: 0 0 26px rgba(255,122,26,1); } }
+.pulse-glow { animation: pulseGlow 1.6s ease-in-out infinite; }
+
+@keyframes sweep { to { transform: rotate(360deg); } }
+.radar-sweep { animation: sweep 3.2s linear infinite; transform-origin: 50% 50%; }
+
+@keyframes waveDrift { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
+.wave-drift { animation: waveDrift 14s linear infinite; }
+.wave-drift-slow { animation: waveDrift 26s linear infinite; }
+
+@keyframes floaty { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+.floaty { animation: floaty 4.5s ease-in-out infinite; }
+
+@keyframes titleFlicker {
+  0%, 100% { opacity: 1; } 92% { opacity: 1; } 93% { opacity: 0.55; } 94% { opacity: 1; } 97% { opacity: 0.75; } 98% { opacity: 1; }
+}
+.title-flicker { animation: titleFlicker 5s linear infinite; }
+
+@keyframes sonarPing { 0% { transform: scale(0.1); opacity: 0.9; } 100% { transform: scale(1); opacity: 0; } }
+.sonar-ping { animation: sonarPing 2.4s ease-out infinite; }
+
+@keyframes riseFade { 0% { opacity: 0; transform: translateY(26px); } 100% { opacity: 1; transform: translateY(0); } }
+.rise-in { animation: riseFade 0.5s cubic-bezier(0.2, 1.2, 0.35, 1) both; }
+
+@keyframes underwaterShimmer { 0%,100% { opacity: 0.5; } 50% { opacity: 0.8; } }
+.uw-shimmer { animation: underwaterShimmer 3s ease-in-out infinite; }
+
+.skull-wanted { filter: drop-shadow(0 0 6px rgba(255,59,48,0.8)); }
+
+.btn-naval {
+  font-family: var(--font-display);
+  letter-spacing: 0.1em;
+  clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
+  transition: transform 0.12s ease, filter 0.12s ease, background 0.12s ease;
+}
+.btn-naval:hover { transform: translateY(-2px) scale(1.02); filter: brightness(1.15); }
+.btn-naval:active { transform: translateY(1px) scale(0.99); }
+
+.card-craft { transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease; }
+.card-craft:hover { transform: translateY(-4px); }
+
+.stat-seg { transition: background 0.15s ease; }

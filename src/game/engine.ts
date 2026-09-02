@@ -1,0 +1,1625 @@
+import * as THREE from "three";
+import type { CraftId, GameCallbacks, HudData, MerchantKind, Mode, MsgKind, RadarBlip, RadarSnap, GameOverInfo } from "./types";
+import { CRAFTS, MERCHANT_INFO } from "./types";
+import { SFX } from "./audio";
+import {
+  buildGoFast, buildSub, buildMerchant, buildPatrol, buildIsland, buildCharacter, makeSea, makeSky, makeClouds,
+  waveH, rand, clamp, lerp, angDiff,
+} from "./world";
+import type { PlayerRig, MerchantRig, PatrolRig, CharRig } from "./world";
+
+// ---------------------------------------------------------------- entidades
+interface GuardEnt {
+  rig: CharRig; hp: number; alive: boolean; surrendered: boolean;
+  fireT: number; burstLeft: number; burstT: number;
+  local: THREE.Vector3; isBoss: boolean; fallT: number; strafeSeed: number;
+}
+interface Merchant {
+  rig: MerchantRig; kind: MerchantKind; name: string; value: number;
+  hp: number; maxHp: number; speed: number; baseSpeed: number; heading: number;
+  wp: THREE.Vector3; state: "sail" | "disabled" | "sinking" | "sold";
+  smokeT: number; detected: boolean; anchorY: number;
+  guards: GuardEnt[]; boss: GuardEnt | null; captainRig: CharRig;
+  boarded: boolean; hijacked: boolean; sinkT: number; alertT: number;
+}
+interface Patrol {
+  rig: PatrolRig; heading: number; speed: number; wp: THREE.Vector3;
+  fireT: number; burstLeft: number; burstT: number; hp: number;
+}
+interface Torpedo { mesh: THREE.Group; dir: THREE.Vector3; speed: number; life: number; depth: number; }
+interface Particle {
+  s: THREE.Sprite; vel: THREE.Vector3; life: number; maxLife: number;
+  s0: number; s1: number; grav: number; op: number;
+}
+interface Tracer { line: THREE.Line; life: number; }
+
+interface HitRef { type: "guard" | "patrol" | "merchant" | "captain" | "island"; guard?: GuardEnt; patrol?: Patrol; merchant?: Merchant; }
+
+const FOG_COLOR = 0x0e333d;
+const FOG_DENSITY = 0.00042;
+const MAP_LIMIT = 2800;
+
+export class Game {
+  private renderer: THREE.WebGLRenderer;
+  private scene = new THREE.Scene();
+  private camera: THREE.PerspectiveCamera;
+  private canvas: HTMLCanvasElement;
+  private cb: GameCallbacks;
+  private sfx = new SFX();
+  private raf = 0;
+  private clock = new THREE.Clock();
+  private disposed = false;
+  paused = false;
+  private over = false;
+
+  // jugador
+  private craft: PlayerRig;
+  private craftId: CraftId;
+  private heading = 0;
+  private speed = 0;
+  private throttle = 0;
+  private hull: number;
+  private hullMax: number;
+  private health = 100;
+  private lookYaw = 0;
+  private lookPitch = -0.08;
+  private submerged = false;
+  private depth = 0;
+  private torps: number;
+  private torpCool = 0;
+  private fireCool = 0;
+  private mag = 30;
+  private reloading = false;
+  private reloadT = 0;
+  private zoom = false;
+  private fov = 70;
+
+  // modo
+  private mode: Mode = "sea";
+  private boardShip: Merchant | null = null;
+  private captainShip: Merchant | null = null;
+  private pirate: CharRig | null = null;
+  private shipSpeed = 0;
+  private shipHull = 300;
+  private shipHullMax = 300;
+  private progress = -1; // 0..1 para acciones de mantener E
+  private progressKind: "hijack" | "sell" | null = null;
+
+  // mundo
+  private sea: THREE.Mesh;
+  private sky: THREE.Mesh;
+  private merchants: Merchant[] = [];
+  private patrols: Patrol[] = [];
+  private islands: { g: THREE.Group; x: number; z: number; r: number }[] = [];
+  private sellPoint = new THREE.Vector3();
+  private sellBeacon: THREE.Mesh;
+  private torpedoes: Torpedo[] = [];
+  private shootables: THREE.Object3D[] = [];
+  private t = 0;
+  private timeSec = 0;
+
+  // fx
+  private pTex: THREE.Texture;
+  private particles: Particle[] = [];
+  private tracers: Tracer[] = [];
+  private flashLight: THREE.PointLight;
+  private flashT = 0;
+  private shake = 0;
+  private camPos = new THREE.Vector3(0, 8, -20);
+
+  // estado
+  private wanted = 0;
+  private wantedDecayT = 0;
+  private money = 0;
+  private contracts = 0;
+  private kills = 0;
+  private torpHits = 0;
+  private arrestT = 0;
+  private damageT = -10;
+  private hitT = -10;
+  private hudT = 0;
+  private radarT = 0;
+  private radar: RadarSnap = { px: 0, pz: 0, heading: 0, range: 900, blips: [] };
+  private objective = "";
+  private blindSpot: "proa" | "popa" | null = null;
+  private canInteract: string | null = null;
+  private nearestTarget: Merchant | null = null;
+  private limitMsgT = 0;
+  private sonarT = 0;
+  private arrestWarnT = 0;
+
+  // input
+  private keys = new Set<string>();
+  private pressed = new Set<string>();
+  private firing = false;
+
+  constructor(canvas: HTMLCanvasElement, craftId: CraftId, cb: GameCallbacks) {
+    this.canvas = canvas;
+    this.cb = cb;
+    this.craftId = craftId;
+    const def = CRAFTS[craftId];
+    this.hull = def.hull;
+    this.hullMax = def.hull;
+    this.torps = def.torpedoes;
+
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
+    this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.renderer.setClearColor(FOG_COLOR);
+    this.camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 14000);
+    this.scene.fog = new THREE.FogExp2(FOG_COLOR, FOG_DENSITY);
+
+    // luces: atardecer
+    const hemi = new THREE.HemisphereLight(0x7fb2c4, 0x0a1a20, 0.85);
+    this.scene.add(hemi);
+    const sun = new THREE.DirectionalLight(0xffa050, 2.2);
+    sun.position.set(-2200, 700, -3200);
+    this.scene.add(sun);
+    const fill = new THREE.DirectionalLight(0x3a6a7a, 0.5);
+    fill.position.set(1500, 900, 2000);
+    this.scene.add(fill);
+
+    this.sea = makeSea(FOG_COLOR, FOG_DENSITY);
+    this.scene.add(this.sea);
+    this.sky = makeSky();
+    this.scene.add(this.sky);
+    this.scene.add(makeClouds());
+
+    this.flashLight = new THREE.PointLight(0xffc060, 0, 90);
+    this.scene.add(this.flashLight);
+
+    // textura de partículas
+    const cv = document.createElement("canvas");
+    cv.width = 64; cv.height = 64;
+    const cx = cv.getContext("2d")!;
+    const grd = cx.createRadialGradient(32, 32, 2, 32, 32, 30);
+    grd.addColorStop(0, "rgba(255,255,255,1)");
+    grd.addColorStop(0.35, "rgba(255,255,255,0.7)");
+    grd.addColorStop(1, "rgba(255,255,255,0)");
+    cx.fillStyle = grd;
+    cx.fillRect(0, 0, 64, 64);
+    this.pTex = new THREE.CanvasTexture(cv);
+
+    // jugador
+    this.craft = def.submarine ? buildSub(def) : buildGoFast(def);
+    this.scene.add(this.craft.group);
+
+    // beacon del punto de venta
+    const bg = new THREE.CylinderGeometry(3, 7, 260, 10, 1, true);
+    const bm = new THREE.MeshBasicMaterial({ color: 0xffb347, transparent: true, opacity: 0.28, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+    this.sellBeacon = new THREE.Mesh(bg, bm);
+    this.sellBeacon.visible = false;
+    this.scene.add(this.sellBeacon);
+
+    this.buildWorld();
+    this.bindInput();
+    this.pushMsg(`Contrato abierto: roba la mercancía de cualquier barco y véndela en la cala.`, "info");
+    this.pushMsg(`Detecta contactos en el radar y acércate por proa o popa.`, "info");
+    this.loop();
+  }
+
+  // ------------------------------------------------------------- mundo
+  private tag(root: THREE.Object3D, ref: HitRef) {
+    root.traverse((o) => { o.userData.hit = ref; });
+    this.shootables.push(root);
+  }
+
+  private buildWorld() {
+    // isla del perista (punto de venta)
+    const cove = buildIsland(95, 8, true);
+    cove.position.set(2350, 0, -1750);
+    this.scene.add(cove);
+    this.islands.push({ g: cove, x: 2350, z: -1750, r: 95 });
+    this.sellPoint.set(2350 + 95 + 30, 0, -1750);
+    this.sellBeacon.position.set(this.sellPoint.x, 100, this.sellPoint.z);
+
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2 + rand(-0.3, 0.3);
+      const d = rand(750, 2500);
+      const x = Math.cos(a) * d, z = Math.sin(a) * d;
+      const r = rand(45, 90);
+      const isl = buildIsland(r, Math.floor(rand(3, 8)), false);
+      isl.position.set(x, 0, z);
+      this.scene.add(isl);
+      this.islands.push({ g: isl, x, z, r });
+      this.tag(isl, { type: "island" });
+    }
+
+    this.spawnMerchant("cargo", "MV ALBATROS", 950, 0.7);
+    this.spawnMerchant("tanker", "PETROLERO DELTA", 1450, 2.4);
+    this.spawnMerchant("yacht", "YATE SERENISSIMA", 1150, 4.2);
+    this.spawnMerchant("liner", "SS COLOSO DE LOS MARES", 2050, 5.4);
+
+    this.spawnPatrol(rand(0, 6), 800);
+    this.spawnPatrol(rand(0, 6), 950);
+  }
+
+  private spawnMerchant(kind: MerchantKind, name: string, dist: number, ang: number) {
+    const rig = buildMerchant(kind, name);
+    const x = Math.cos(ang) * dist, z = Math.sin(ang) * dist;
+    rig.group.position.set(x, 0, z);
+    this.scene.add(rig.group);
+    const m: Merchant = {
+      rig, kind, name,
+      value: MERCHANT_INFO[kind].value,
+      hp: 100, maxHp: 100,
+      speed: kind === "yacht" ? 5.5 : kind === "liner" ? 4.4 : 4,
+      baseSpeed: kind === "yacht" ? 5.5 : kind === "liner" ? 4.4 : 4,
+      heading: rand(0, Math.PI * 2),
+      wp: new THREE.Vector3(rand(-2200, 2200), 0, rand(-2200, 2200)),
+      state: "sail", smokeT: 0, detected: false, anchorY: 0,
+      guards: [], boss: null,
+      captainRig: buildCharacter("captain"),
+      boarded: false, hijacked: false, sinkT: 0, alertT: 0,
+    };
+    // guardias
+    rig.deck.guardLocals.forEach((loc, i) => {
+      const r = buildCharacter("guard");
+      r.group.position.copy(loc);
+      r.group.rotation.y = rand(0, Math.PI * 2);
+      rig.group.add(r.group);
+      const g: GuardEnt = { rig: r, hp: 45, alive: true, surrendered: false, fireT: rand(0.4, 1.4), burstLeft: 0, burstT: 0, local: loc.clone(), isBoss: false, fallT: 0, strafeSeed: rand(0, 9) };
+      m.guards.push(g);
+      const hb = new THREE.Mesh(new THREE.BoxGeometry(1.5, 2.4, 1.5), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+      hb.position.y = 1.2;
+      r.group.add(hb);
+      this.tag(hb, { type: "guard", guard: g, merchant: m });
+      void i;
+    });
+    if (rig.deck.bossLocal) {
+      const r = buildCharacter("boss");
+      r.group.scale.setScalar(1.3);
+      r.group.position.copy(rig.deck.bossLocal);
+      rig.group.add(r.group);
+      const b: GuardEnt = { rig: r, hp: 120, alive: true, surrendered: false, fireT: 0.8, burstLeft: 0, burstT: 0, local: rig.deck.bossLocal.clone(), isBoss: true, fallT: 0, strafeSeed: 3 };
+      m.boss = b;
+      m.guards.push(b);
+      const hb = new THREE.Mesh(new THREE.BoxGeometry(1.8, 2.8, 1.8), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+      hb.position.y = 1.3;
+      r.group.add(hb);
+      this.tag(hb, { type: "guard", guard: b, merchant: m });
+    }
+    // capitán en el ala del puente (a nivel de cubierta, junto a la puerta)
+    const d = rig.deck;
+    m.captainRig.group.position.set(d.bridgeLocal.x + d.wid * 0.2, d.deckY + 0.4, d.bridgeLocal.z + 8.2);
+    m.captainRig.group.rotation.y = Math.PI;
+    rig.group.add(m.captainRig.group);
+    const chb = new THREE.Mesh(new THREE.BoxGeometry(1.4, 2.3, 1.4), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+    chb.position.y = 1.15;
+    m.captainRig.group.add(chb);
+    this.tag(chb, { type: "captain", merchant: m });
+    this.tag(rig.group, { type: "merchant", merchant: m });
+    this.merchants.push(m);
+  }
+
+  private spawnPatrol(ang: number, dist: number) {
+    const rig = buildPatrol();
+    const px = this.craft.group.position.x + Math.cos(ang) * dist;
+    const pz = this.craft.group.position.z + Math.sin(ang) * dist;
+    rig.group.position.set(clamp(px, -MAP_LIMIT, MAP_LIMIT), 0, clamp(pz, -MAP_LIMIT, MAP_LIMIT));
+    this.scene.add(rig.group);
+    const p: Patrol = { rig, heading: rand(0, 6.28), speed: 0, wp: new THREE.Vector3(rand(-2400, 2400), 0, rand(-2400, 2400)), fireT: 1, burstLeft: 0, burstT: 0, hp: 160 };
+    this.patrols.push(p);
+    this.tag(rig.group, { type: "patrol", patrol: p });
+  }
+
+  // ------------------------------------------------------------- input
+  private onKeyDown = (e: KeyboardEvent) => {
+    if (e.repeat) return;
+    this.keys.add(e.code);
+    this.pressed.add(e.code);
+    if (e.code === "KeyM") this.sfx.setMuted(!this.sfx.muted);
+    if (e.code === "Escape" || e.code === "KeyP") {
+      if (!this.over) this.cb.onHudPauseRequest();
+    }
+  };
+  private onKeyUp = (e: KeyboardEvent) => { this.keys.delete(e.code); };
+  private onMouseMove = (e: MouseEvent) => {
+    if (document.pointerLockElement !== this.canvas) return;
+    this.lookYaw -= e.movementX * 0.0022;
+    this.lookPitch = clamp(this.lookPitch - e.movementY * 0.002, -0.55, 0.62);
+  };
+  private onMouseDown = (e: MouseEvent) => {
+    if (e.button === 0) this.firing = true;
+    if (e.button === 2) this.zoom = true;
+  };
+  private onMouseUp = (e: MouseEvent) => {
+    if (e.button === 0) this.firing = false;
+    if (e.button === 2) this.zoom = false;
+  };
+  private onCtx = (e: Event) => e.preventDefault();
+  private onResize = () => {
+    this.camera.aspect = window.innerWidth / window.innerHeight;
+    this.camera.updateProjectionMatrix();
+    this.renderer.setSize(window.innerWidth, window.innerHeight);
+  };
+  private onLockChange = () => {
+    if (document.pointerLockElement !== this.canvas && !this.paused && !this.over && !this.disposed) {
+      this.cb.onLockLost();
+    }
+  };
+
+  private bindInput() {
+    window.addEventListener("keydown", this.onKeyDown);
+    window.addEventListener("keyup", this.onKeyUp);
+    document.addEventListener("mousemove", this.onMouseMove);
+    document.addEventListener("mousedown", this.onMouseDown);
+    document.addEventListener("mouseup", this.onMouseUp);
+    this.canvas.addEventListener("contextmenu", this.onCtx);
+    window.addEventListener("resize", this.onResize);
+    document.addEventListener("pointerlockchange", this.onLockChange);
+  }
+
+  requestLock() {
+    this.sfx.ensure();
+    const p = this.canvas.requestPointerLock() as unknown as Promise<void> | undefined;
+    if (p && typeof p.catch === "function") p.catch(() => undefined);
+  }
+
+  setPaused(p: boolean) {
+    this.paused = p;
+    if (p) document.exitPointerLock();
+    this.sfx.engine(0, 1, false);
+    this.sfx.siren(false);
+  }
+
+  dispose() {
+    this.disposed = true;
+    cancelAnimationFrame(this.raf);
+    window.removeEventListener("keydown", this.onKeyDown);
+    window.removeEventListener("keyup", this.onKeyUp);
+    document.removeEventListener("mousemove", this.onMouseMove);
+    document.removeEventListener("mousedown", this.onMouseDown);
+    document.removeEventListener("mouseup", this.onMouseUp);
+    this.canvas.removeEventListener("contextmenu", this.onCtx);
+    window.removeEventListener("resize", this.onResize);
+    document.removeEventListener("pointerlockchange", this.onLockChange);
+    this.sfx.siren(false);
+    this.renderer.dispose();
+  }
+
+  getRadar(): RadarSnap { return this.radar; }
+
+  private pushMsg(text: string, kind: MsgKind) {
+    this.cb.onMessage(text, kind);
+  }
+
+  // ------------------------------------------------------------- FX
+  private spawnP(pos: THREE.Vector3, vel: THREE.Vector3, life: number, s0: number, s1: number, color: number, op: number, grav: number, additive: boolean) {
+    if (this.particles.length > 300) return;
+    const mat = new THREE.SpriteMaterial({ map: this.pTex, color, transparent: true, opacity: op, depthWrite: false, blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending });
+    const s = new THREE.Sprite(mat);
+    s.position.copy(pos);
+    s.scale.setScalar(s0);
+    this.scene.add(s);
+    this.particles.push({ s, vel, life, maxLife: life, s0, s1, grav, op });
+  }
+
+  private burst(pos: THREE.Vector3, n: number, color: number, speed: number, life: number, size: number, grav: number, additive = true) {
+    for (let i = 0; i < n; i++) {
+      const v = new THREE.Vector3(rand(-1, 1), rand(-0.4, 1.1), rand(-1, 1)).normalize().multiplyScalar(rand(speed * 0.3, speed));
+      this.spawnP(pos, v, rand(life * 0.5, life), size, size * 0.2, color, 0.95, grav, additive);
+    }
+  }
+
+  private smoke(pos: THREE.Vector3, n: number, dark = false) {
+    for (let i = 0; i < n; i++) {
+      const v = new THREE.Vector3(rand(-0.6, 0.6), rand(1.5, 3.4), rand(-0.6, 0.6));
+      this.spawnP(pos, v, rand(1.2, 2.4), rand(2, 4), rand(8, 14), dark ? 0x141414 : 0x3a3a3a, 0.5, -0.4, false);
+    }
+  }
+
+  private explosion(pos: THREE.Vector3, scale = 1) {
+    this.burst(pos, Math.floor(16 * scale), 0xffb347, 26 * scale, 0.7, 2.4 * scale, 8);
+    this.burst(pos, Math.floor(10 * scale), 0xff5a1a, 18 * scale, 0.5, 3.2 * scale, 4);
+    this.smoke(pos, Math.floor(10 * scale), true);
+    const flash = this.spawnP(pos, new THREE.Vector3(), 0.22, 4 * scale, 22 * scale, 0xffe0a0, 1, 0, true);
+    void flash;
+    this.flashLight.position.copy(pos);
+    this.flashLight.intensity = 900 * scale;
+    this.flashT = 0.12;
+    this.shake = Math.min(2.2, this.shake + 1.1 * scale);
+    this.sfx.explosion(scale > 1.3);
+  }
+
+  private splash(pos: THREE.Vector3, scale = 1) {
+    this.burst(pos, Math.floor(10 * scale), 0xbfeef2, 12 * scale, 0.6, 1.6 * scale, 20, true);
+    this.smoke(pos, 4);
+    this.sfx.splash();
+  }
+
+  private muzzleFlash(worldPos: THREE.Vector3, big = false) {
+    this.spawnP(worldPos, new THREE.Vector3(), 0.055, big ? 2.4 : 1.1, 0.2, 0xffd080, 1, 0, true);
+    this.flashLight.position.copy(worldPos);
+    this.flashLight.intensity = big ? 320 : 140;
+    this.flashT = 0.05;
+  }
+
+  private tracer(from: THREE.Vector3, to: THREE.Vector3, color: number) {
+    const geo = new THREE.BufferGeometry().setFromPoints([from.clone(), to.clone()]);
+    const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.9 });
+    const line = new THREE.Line(geo, mat);
+    this.scene.add(line);
+    this.tracers.push({ line, life: 0.09 });
+    if (this.tracers.length > 70) {
+      const old = this.tracers.shift()!;
+      this.scene.remove(old.line);
+      old.line.geometry.dispose();
+      (old.line.material as THREE.Material).dispose();
+    }
+  }
+
+  // ------------------------------------------------------------- daño
+  private damagePlayer(amount: number) {
+    if (this.over) return;
+    if (this.mode === "sea") {
+      this.hull -= amount;
+      if (this.hull <= 0) {
+        this.hull = 0;
+        this.explosion(this.craft.group.position.clone().add(new THREE.Vector3(0, 2, 0)), 1.8);
+        this.gameOver("hundido", "TU EMBARCACIÓN VOLÓ EN PEDAZOS", "La patrulla hundió tu nave en aguas abiertas. El mar no devuelve lo que se lleva.");
+      }
+    } else if (this.mode === "board") {
+      this.health -= amount;
+      if (this.health <= 0) {
+        this.health = 0;
+        this.gameOver("muerto", "CAÍSTE EN CUBIERTA", "La seguridad del barco fue más rápida que tú. Tu cuerpo se lo queda el mar.");
+      }
+    } else {
+      this.shipHull -= amount;
+      if (this.shipHull <= 0) {
+        this.shipHull = 0;
+        const p = this.captainShip!.rig.group.position.clone();
+        this.explosion(p.add(new THREE.Vector3(0, 10, 0)), 2.4);
+        this.gameOver("hundido", "HUNDIERON TU BARCO ROBADO", "La policía marítima echó a pique el carguero con toda la mercancía a bordo.");
+      }
+    }
+    this.damageT = performance.now();
+    this.sfx.hurt();
+    this.shake = Math.min(1.6, this.shake + 0.35);
+  }
+
+  private gameOver(cause: GameOverInfo["cause"], title: string, detail: string) {
+    if (this.over) return;
+    this.over = true;
+    this.sfx.siren(false);
+    this.sfx.engine(0, 1, false);
+    document.exitPointerLock();
+    this.cb.onGameOver({ cause, title, detail, money: this.money, contracts: this.contracts, kills: this.kills, torpHits: this.torpHits, timeSec: Math.floor(this.timeSec) });
+  }
+
+  // ------------------------------------------------------------- bucle
+  private loop = () => {
+    if (this.disposed) return;
+    this.raf = requestAnimationFrame(this.loop);
+    const dt = Math.min(0.05, this.clock.getDelta());
+    if (!this.paused && !this.over) this.update(dt);
+    this.renderer.render(this.scene, this.camera);
+  };
+
+  private update(dt: number) {
+    this.t += dt;
+    this.timeSec += dt;
+    const seaMat = this.sea.material as THREE.ShaderMaterial;
+    seaMat.uniforms.uT.value = this.t;
+    (this.sky.material as THREE.ShaderMaterial).uniforms.uCam.value.copy(this.camera.position);
+    seaMat.uniforms.uCam.value.copy(this.camera.position);
+
+    if (this.mode === "sea") this.updateSea(dt);
+    else if (this.mode === "board") this.updateBoard(dt);
+    else this.updateCaptain(dt);
+
+    this.updateMerchants(dt);
+    this.updatePatrols(dt);
+    this.updateTorpedoes(dt);
+    this.updateWanted(dt);
+    this.updateFx(dt);
+    this.updateCamera(dt);
+    this.updateObjective();
+
+    // sonido motor + sirena
+    const nearPatrol = this.patrols.some((p) => p.rig.group.position.distanceTo(this.craft.group.position) < 420 && this.wanted > 0);
+    this.sfx.siren(nearPatrol && this.wanted > 0);
+    if (this.mode === "sea") this.sfx.engine(Math.abs(this.throttle), this.craftId === "tiburon" ? 0.62 : 1, true);
+    else if (this.mode === "captain") this.sfx.engine(Math.abs(this.throttle) * 0.6, 0.45, true);
+    else this.sfx.engine(0, 1, false);
+
+    // sonar del submarino
+    if (this.craftId === "tiburon" && this.submerged) {
+      this.sonarT -= dt;
+      if (this.sonarT <= 0) { this.sonarT = 3.5; this.sfx.sonar(); }
+    }
+
+    // HUD throttle
+    this.hudT -= dt;
+    if (this.hudT <= 0) {
+      this.hudT = 0.1;
+      this.emitHud();
+    }
+    this.radarT -= dt;
+    if (this.radarT <= 0) {
+      this.radarT = 0.15;
+      this.buildRadar();
+    }
+    this.pressed.clear();
+  }
+
+  // ------------------------------------------------------------- modo mar
+  private updateSea(dt: number) {
+    const def = CRAFTS[this.craftId];
+    const k = this.keys;
+    const tIn = (k.has("KeyW") || k.has("ArrowUp") ? 1 : 0) - (k.has("KeyS") || k.has("ArrowDown") ? 0.55 : 0);
+    this.throttle = lerp(this.throttle, tIn, dt * 2.2);
+    const boost = k.has("ShiftLeft") && !def.submarine ? 1.22 : 1;
+    const target = this.throttle * def.topSpeed * boost * (this.submerged ? 0.62 : 1);
+    this.speed = lerp(this.speed, target, dt * (def.accel / 10) * 2.4);
+    const turnIn = (k.has("KeyA") || k.has("ArrowLeft") ? 1 : 0) - (k.has("KeyD") || k.has("ArrowRight") ? 1 : 0);
+    const speedFactor = clamp(Math.abs(this.speed) / 6, 0.25, 1);
+    this.heading += turnIn * def.turn * speedFactor * dt * Math.sign(this.speed >= 0 ? 1 : -1);
+
+    const fwd = new THREE.Vector3(Math.sin(this.heading), 0, Math.cos(this.heading));
+    const pos = this.craft.group.position;
+    pos.addScaledVector(fwd, this.speed * dt);
+    this.clampMap(pos);
+
+    // sumergirse / emerger
+    if (this.pressed.has("KeyC") && def.submarine) {
+      this.submerged = !this.submerged;
+      this.pushMsg(this.submerged ? "Sumergido. La patrulla te pierde el rastro." : "Emergiendo. Cañón de cubierta listo.", "info");
+      this.sfx.splashDown();
+      this.splash(pos.clone().add(new THREE.Vector3(0, 1, 0)), 1.6);
+    }
+    const targetY = this.submerged ? -11 : waveH(pos.x, pos.z, this.t) + (def.submarine ? 0.55 : 0.35);
+    pos.y = lerp(pos.y, targetY, dt * (this.submerged ? 1.4 : 6));
+    this.depth = -Math.min(0, pos.y - 1);
+    this.craft.group.rotation.y = this.heading;
+    if (!this.submerged) {
+      const e = 2.5;
+      const hC = waveH(pos.x, pos.z, this.t);
+      const hF = waveH(pos.x + fwd.x * e, pos.z + fwd.z * e, this.t);
+      const side = new THREE.Vector3(fwd.z, 0, -fwd.x);
+      const hS = waveH(pos.x + side.x * e, pos.z + side.z * e, this.t);
+      this.craft.group.rotation.x = Math.atan2(hC - hF, e) * 0.8;
+      this.craft.group.rotation.z = Math.atan2(hS - hC, e) * 0.9;
+    } else {
+      this.craft.group.rotation.x = lerp(this.craft.group.rotation.x, this.throttle * 0.12, dt * 2);
+      this.craft.group.rotation.z = lerp(this.craft.group.rotation.z, -turnIn * 0.15, dt * 3);
+    }
+
+    // estela y burbujas
+    if (Math.abs(this.speed) > 4 && Math.random() < 0.75) {
+      const stern = new THREE.Vector3();
+      this.craft.sternAnchor.getWorldPosition(stern);
+      this.spawnP(stern, new THREE.Vector3(rand(-1, 1), rand(0.4, 1.4), rand(-1, 1)), 0.7, rand(1.5, 3), 3.5, 0xd8f4f4, 0.5, 0.6, true);
+    }
+
+    // torreta sigue la vista
+    const relYaw = angDiff(this.heading, this.lookYaw);
+    this.craft.turret.rotation.y = clamp(relYaw, -1.2, 1.2);
+
+    // disparo montado (solo superficie)
+    this.fireCool -= dt;
+    if (this.firing && !this.submerged && this.fireCool <= 0) {
+      this.fireCool = 1 / def.fireRate;
+      this.fireCraftGun();
+    }
+    // torpedos
+    this.torpCool -= dt;
+    if (this.pressed.has("Space") && def.submarine) {
+      if (this.torps > 0 && this.torpCool <= 0) this.launchTorpedo();
+      else if (this.torps <= 0) { this.pushMsg("Sin torpedos. Vende mercancía para reabastecer.", "warn"); this.sfx.empty(); }
+    }
+
+    // detección de zona ciega para abordar
+    this.blindSpot = null;
+    this.canInteract = null;
+    this.nearestTarget = null;
+    let best = 1e9;
+    for (const m of this.merchants) {
+      if (m.state === "sinking" || m.state === "sold" || m.hijacked || m.boarded) continue;
+      const mp = m.rig.group.position;
+      const d = pos.distanceTo(mp);
+      if (d < best) { best = d; this.nearestTarget = m; }
+      if (!m.detected && d < 1100) {
+        m.detected = true;
+        this.pushMsg(`CONTACTO EN EL RADAR: ${m.name} · ${MERCHANT_INFO[m.kind].label} · mercancía ${"$" + m.value.toLocaleString("es-ES")}`, "info");
+        this.sfx.sonar();
+      }
+      if (d < 55) {
+        const mf = new THREE.Vector3(Math.sin(m.heading), 0, Math.cos(m.heading));
+        const toP = pos.clone().sub(mp).normalize();
+        const dotB = mf.dot(toP);
+        if (Math.abs(dotB) > 0.72) {
+          this.blindSpot = dotB > 0 ? "proa" : "popa";
+          if (Math.abs(this.speed) < 7) {
+            this.canInteract = `LANZAR GARFIO POR ${this.blindSpot.toUpperCase()} — PULSA E`;
+            if (this.pressed.has("KeyE")) this.startBoarding(m, this.blindSpot);
+          } else {
+            this.canInteract = `ZONA CIEGA (${this.blindSpot.toUpperCase()}) — REDUCE VELOCIDAD`;
+          }
+        }
+      }
+    }
+
+    // límite del mapa
+    this.limitMsgT -= dt;
+  }
+
+  private clampMap(pos: THREE.Vector3) {
+    let hit = false;
+    if (Math.abs(pos.x) > MAP_LIMIT) { pos.x = clamp(pos.x, -MAP_LIMIT, MAP_LIMIT); hit = true; }
+    if (Math.abs(pos.z) > MAP_LIMIT) { pos.z = clamp(pos.z, -MAP_LIMIT, MAP_LIMIT); hit = true; }
+    if (hit && this.limitMsgT <= 0) {
+      this.limitMsgT = 8;
+      this.pushMsg("MAR DE TORMENTAS — DA MEDIA VUELTA", "warn");
+    }
+  }
+
+  private camDir(): THREE.Vector3 {
+    const d = new THREE.Vector3(
+      Math.sin(this.lookYaw) * Math.cos(this.lookPitch),
+      Math.sin(this.lookPitch),
+      Math.cos(this.lookYaw) * Math.cos(this.lookPitch)
+    );
+    return d.normalize();
+  }
+
+  private fireCraftGun() {
+    const def = CRAFTS[this.craftId];
+    const muzzle = new THREE.Vector3();
+    this.craft.muzzle.getWorldPosition(muzzle);
+    this.muzzleFlash(muzzle, this.craftId === "tiburon");
+    this.sfx.shot(this.craftId === "tiburon");
+    const dir = this.camDir();
+    const hitPoint = this.raycastWorld(muzzle, dir, 900);
+    const end = hitPoint ? hitPoint.point : muzzle.clone().addScaledVector(dir, 600);
+    this.tracer(muzzle, end, 0xffd27a);
+    if (hitPoint) this.applyHit(hitPoint, def.weaponDmg, "craft");
+    // disparar cerca de mercantes sube la búsqueda
+    for (const m of this.merchants) {
+      if (m.rig.group.position.distanceTo(this.craft.group.position) < 260) { this.raiseWanted(1); break; }
+    }
+  }
+
+  private raycastWorld(from: THREE.Vector3, dir: THREE.Vector3, maxDist: number) {
+    const rc = new THREE.Raycaster(from, dir.clone().normalize(), 0.1, maxDist);
+    const hits = rc.intersectObjects(this.shootables, true);
+    if (hits.length === 0) return null;
+    const h = hits[0];
+    let o: THREE.Object3D | null = h.object;
+    let ref: HitRef | undefined;
+    while (o) {
+      if (o.userData.hit) { ref = o.userData.hit as HitRef; break; }
+      o = o.parent;
+    }
+    return { point: h.point, ref };
+  }
+
+  private applyHit(hit: { point: THREE.Vector3; ref: HitRef | undefined }, dmg: number, source: "craft" | "rifle") {
+    const r = hit.ref;
+    this.burst(hit.point, 5, 0xffd070, 7, 0.3, 0.5, 6);
+    if (!r) return;
+    if (r.type === "guard" && r.guard) {
+      const g = r.guard;
+      if (!g.alive) return;
+      g.hp -= source === "rifle" ? dmg : dmg * 1.2;
+      this.hitT = performance.now();
+      this.sfx.hit();
+      if (g.hp <= 0) this.killGuard(g, r.merchant!);
+      else if (r.merchant && !r.merchant.boarded) this.alertMerchant(r.merchant);
+    } else if (r.type === "patrol" && r.patrol) {
+      r.patrol.hp -= dmg;
+      this.hitT = performance.now();
+      this.sfx.hit();
+      this.raiseWanted(2);
+      if (r.patrol.hp <= 0) this.destroyPatrol(r.patrol);
+    } else if (r.type === "merchant" && r.merchant) {
+      const m = r.merchant;
+      m.hp -= dmg * 0.25;
+      if (source === "craft") this.alertMerchant(m);
+      if (m.hp <= 60 && m.state === "sail" && m.hp > 0) {
+        m.state = "disabled";
+        m.baseSpeed = 0;
+        this.pushMsg(`${m.name} AVERIADO — humo en la sala de máquinas`, "good");
+      }
+    } else if (r.type === "captain") {
+      if (source === "rifle" && this.mode === "board") this.pushMsg("¡Al capitán no! Lo necesitas vivo para el barco.", "warn");
+    }
+  }
+
+  private alertMerchant(m: Merchant) {
+    if (m.alertT > 0) return;
+    m.alertT = 6;
+    this.raiseWanted(1);
+    this.sfx.alarm();
+  }
+
+  private killGuard(g: GuardEnt, m: Merchant) {
+    g.alive = false;
+    g.fallT = 0.001;
+    this.kills++;
+    this.sfx.hit();
+    this.burst(g.rig.group.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 1.2, 0)), 8, 0xd84040, 6, 0.5, 0.6, 5);
+    if (g.isBoss) this.pushMsg("JEFE DE SEGURIDAD ELIMINADO — el puente está desprotegido", "good");
+    else if (m.boarded && Math.random() < 0.4) this.pushMsg("Guardia eliminado", "info");
+  }
+
+  private destroyPatrol(p: Patrol) {
+    const pos = p.rig.group.position.clone().add(new THREE.Vector3(0, 2, 0));
+    this.explosion(pos, 1.5);
+    this.scene.remove(p.rig.group);
+    this.patrols = this.patrols.filter((x) => x !== p);
+    this.pushMsg("Patrullera destruida — la caza se intensifica", "danger");
+    this.raiseWanted(2);
+  }
+
+  private raiseWanted(n: number) {
+    this.wanted = clamp(Math.max(this.wanted, n), 0, 5);
+  }
+
+  private launchTorpedo() {
+    this.torps--;
+    this.torpCool = 1.3;
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.35, 3.2, 4, 8), new THREE.MeshStandardMaterial({ color: 0x39424e, roughness: 0.4, metalness: 0.6 }));
+    body.rotation.x = Math.PI / 2;
+    g.add(body);
+    const nose = new THREE.Mesh(new THREE.ConeGeometry(0.35, 0.8, 8), new THREE.MeshStandardMaterial({ color: 0xffb347, roughness: 0.5 }));
+    nose.rotation.x = Math.PI / 2;
+    nose.position.z = 2;
+    g.add(nose);
+    const bow = new THREE.Vector3();
+    this.craft.bowAnchor.getWorldPosition(bow);
+    const depth = clamp(bow.y - 1.5, -13, -3.5);
+    bow.y = depth;
+    g.position.copy(bow);
+    const dir = this.camDir();
+    dir.y = 0;
+    dir.normalize();
+    g.rotation.y = this.lookYaw;
+    this.scene.add(g);
+    this.torpedoes.push({ mesh: g, dir, speed: 27, life: 22, depth });
+    this.sfx.torpedoLaunch();
+    this.raiseWanted(1);
+    this.pushMsg("¡Torpedo en el agua!", "info");
+  }
+
+  private updateTorpedoes(dt: number) {
+    for (const t of this.torpedoes) {
+      t.life -= dt;
+      t.mesh.position.addScaledVector(t.dir, t.speed * dt);
+      t.mesh.position.y = lerp(t.mesh.position.y, t.depth, dt * 2);
+      if (Math.random() < 0.6) {
+        this.spawnP(t.mesh.position.clone(), new THREE.Vector3(rand(-0.4, 0.4), rand(0.6, 1.6), rand(-0.4, 0.4)), 0.8, 0.5, 1.6, 0xbfeef2, 0.4, -0.6, true);
+      }
+      // colisión con mercantes
+      let consumed = false;
+      for (const m of this.merchants) {
+        if (m.state === "sinking" || m.state === "sold" || m.hijacked) continue;
+        const local = this.toLocal(m, t.mesh.position);
+        const d = m.rig.deck;
+        if (Math.abs(local.x) < d.wid / 2 + 2.5 && Math.abs(local.z) < d.len / 2 + 4) {
+          this.torpedoImpact(m, t.mesh.position);
+          consumed = true;
+          break;
+        }
+      }
+      if (!consumed) {
+        for (const p of this.patrols) {
+          if (p.rig.group.position.distanceTo(t.mesh.position) < 12) {
+            this.explosion(p.rig.group.position.clone().add(new THREE.Vector3(0, 2, 0)), 1.6);
+            this.destroyPatrol(p);
+            this.torpHits++;
+            consumed = true;
+            break;
+          }
+        }
+      }
+      if (consumed || t.life <= 0) {
+        this.scene.remove(t.mesh);
+      }
+    }
+    this.torpedoes = this.torpedoes.filter((t) => t.life > 0 && t.mesh.parent !== null);
+  }
+
+  private toLocal(m: Merchant, world: THREE.Vector3): THREE.Vector3 {
+    const mp = m.rig.group.position;
+    const dx = world.x - mp.x, dz = world.z - mp.z;
+    const h = m.heading;
+    return new THREE.Vector3(dx * Math.cos(h) - dz * Math.sin(h), 0, dx * Math.sin(h) + dz * Math.cos(h));
+  }
+  private toWorld(m: Merchant, local: THREE.Vector3): THREE.Vector3 {
+    const mp = m.rig.group.position;
+    const h = m.heading;
+    return new THREE.Vector3(
+      mp.x + local.x * Math.cos(h) + local.z * Math.sin(h),
+      mp.y + local.y,
+      mp.z - local.x * Math.sin(h) + local.z * Math.cos(h)
+    );
+  }
+
+  private torpedoImpact(m: Merchant, at: THREE.Vector3) {
+    const surface = at.clone(); surface.y = waveH(at.x, at.z, this.t);
+    this.explosion(surface, 1.7);
+    this.splash(surface, 2.2);
+    this.torpHits++;
+    m.hp -= 24;
+    this.raiseWanted(3);
+    this.alertMerchant(m);
+    this.pushMsg(`¡IMPACTO DE TORPEDO EN ${m.name}!`, "danger");
+    if (m.hp <= 0 && m.state !== "sinking") {
+      m.state = "sinking";
+      m.baseSpeed = 0;
+      this.pushMsg(`${m.name} SE HUNDE — la mercancía se pierde en el fondo`, "danger");
+    } else if (m.hp <= 55 && m.state === "sail") {
+      m.state = "disabled";
+      m.baseSpeed = 0;
+      this.pushMsg(`${m.name} AVERIADO — motores muertos, abordar será más fácil`, "good");
+    }
+  }
+
+  // ------------------------------------------------------------- abordaje
+  private startBoarding(m: Merchant, side: "proa" | "popa") {
+    this.mode = "board";
+    this.boardShip = m;
+    m.boarded = true;
+    m.anchorY = m.rig.group.position.y;
+    m.baseSpeed = 0;
+    this.raiseWanted(4);
+    this.sfx.alarm();
+    this.sfx.horn();
+    // escalera de abordaje
+    const d = m.rig.deck;
+    const ladder = new THREE.Group();
+    const railMat = new THREE.MeshStandardMaterial({ color: 0x8a8f96, roughness: 0.5, metalness: 0.7 });
+    for (const s of [-0.5, 0.5]) {
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(0.12, 9, 0.12), railMat);
+      rail.position.set(s, -3.5, 0);
+      ladder.add(rail);
+    }
+    for (let i = 0; i < 7; i++) {
+      const rung = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.1, 0.1), railMat);
+      rung.position.set(0, -0.5 - i * 1.15, 0);
+      ladder.add(rung);
+    }
+    const lz = side === "proa" ? d.len / 2 - 5 : -d.len / 2 + 18;
+    ladder.position.set(d.wid / 2 - 0.2, d.deckY + 0.4, lz);
+    ladder.rotation.y = Math.PI / 2;
+    m.rig.group.add(ladder);
+    // pirata a bordo (junto a la escalera)
+    this.pirate = buildCharacter("pirate");
+    this.pirate.group.position.set(d.wid / 2 - 2.2, d.deckY + 0.4, lz);
+    m.rig.group.add(this.pirate.group);
+    this.lookYaw = m.heading + (side === "proa" ? Math.PI : 0);
+    this.mag = 30;
+    this.reloading = false;
+    this.health = Math.min(100, this.health + 15);
+    this.pushMsg(`¡A BORDO DE ${m.name}! La alarma suena — vienen los guardias`, "danger");
+    this.pushMsg(m.boss ? "Elimina al JEFE DE SEGURIDAD (chaleco negro, boina roja)" : "Sube al puente y apunta al capitán", "info");
+    // ocultar craft (queda atrás)
+    this.craft.group.visible = false;
+  }
+
+  private updateBoard(dt: number) {
+    const m = this.boardShip!;
+    const d = m.rig.deck;
+    const p = this.pirate!.group;
+    const k = this.keys;
+
+    // movimiento relativo a la cámara
+    const move = new THREE.Vector3();
+    if (k.has("KeyW") || k.has("ArrowUp")) move.z += 1;
+    if (k.has("KeyS") || k.has("ArrowDown")) move.z -= 1;
+    if (k.has("KeyA") || k.has("ArrowLeft")) move.x += 1;
+    if (k.has("KeyD") || k.has("ArrowRight")) move.x -= 1;
+    const sprint = k.has("ShiftLeft") ? 9.5 : 6;
+    if (move.lengthSq() > 0) {
+      move.normalize().multiplyScalar(sprint * dt);
+      move.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.lookYaw);
+      p.position.x += move.x;
+      p.position.z += move.z;
+      p.rotation.y = this.lookYaw;
+      // choque con cajas
+      for (const b of d.boxes) {
+        const px = p.position.x - b.x, pz = p.position.z - b.z;
+        const ox = b.hx + 0.55 - Math.abs(px);
+        const oz = b.hz + 0.55 - Math.abs(pz);
+        if (ox > 0 && oz > 0) {
+          if (ox < oz) p.position.x += Math.sign(px) * ox;
+          else p.position.z += Math.sign(pz) * oz;
+        }
+      }
+      // límites de cubierta
+      const limX = d.railHalf + 0.2;
+      p.position.x = clamp(p.position.x, -limX, limX);
+      p.position.z = clamp(p.position.z, -d.len / 2 + 1.5, d.len / 2 - 1.5);
+      // puente bloqueado
+      const bz = -d.len / 2 + 10;
+      if (Math.abs(p.position.x) < d.wid * 0.42 && p.position.z < bz + 7.6 && p.position.z > bz - 8) {
+        p.position.z = bz + 7.6;
+      }
+      // red eléctrica
+      if (m.kind !== "yacht" && Math.abs(p.position.x) > d.railHalf - 0.75) {
+        this.netT -= dt;
+        if (this.netT <= 0) {
+          this.netT = 0.55;
+          this.damagePlayer(11);
+          this.sfx.buzz();
+          const wp = this.toWorld(m, p.position).add(new THREE.Vector3(0, 1.4, 0));
+          this.burst(wp, 8, 0xffa030, 9, 0.4, 0.7, 4);
+          p.position.x = Math.sign(p.position.x) * (d.railHalf - 1.4);
+        }
+      }
+      // bob al caminar
+      p.position.y = d.deckY + 0.4 + Math.abs(Math.sin(this.t * 11)) * 0.09;
+    }
+
+    // recarga
+    if (this.pressed.has("KeyR") && !this.reloading && this.mag < 30) {
+      this.reloading = true;
+      this.reloadT = 1.6;
+      this.sfx.reload();
+    }
+    if (this.reloading) {
+      this.reloadT -= dt;
+      if (this.reloadT <= 0) { this.reloading = false; this.mag = 30; }
+    }
+
+    // disparo con rifle
+    this.fireCool -= dt;
+    if (this.firing && !this.reloading && this.fireCool <= 0) {
+      if (this.mag <= 0) {
+        this.sfx.empty();
+        this.fireCool = 0.3;
+        this.reloading = true;
+        this.reloadT = 1.6;
+        this.sfx.reload();
+      } else {
+        this.mag--;
+        this.fireCool = 1 / 8.5;
+        const muzzle = new THREE.Vector3();
+        (this.pirate as CharRig).gunTip.getWorldPosition(muzzle);
+        this.muzzleFlash(muzzle);
+        this.sfx.shot(false);
+        const dir = this.camDir();
+        const hit = this.raycastWorld(muzzle, dir, 400);
+        const end = hit ? hit.point : muzzle.clone().addScaledVector(dir, 300);
+        this.tracer(muzzle, end, 0xffe08a);
+        if (hit) this.applyHit(hit, 34, "rifle");
+      }
+    }
+
+    // guardias
+    const playerW = this.toWorld(m, p.position);
+    for (const g of m.guards) {
+      if (!g.alive) {
+        if (g.fallT > 0 && g.fallT < 1) {
+          g.fallT += dt * 2.4;
+          g.rig.group.rotation.x = Math.min(Math.PI / 2, g.fallT * Math.PI / 2);
+          if (g.fallT >= 1) g.fallT = 1;
+        } else if (g.fallT >= 1) {
+          g.fallT += dt * 0.25;
+          if (g.fallT > 2) g.rig.group.visible = false;
+        }
+        continue;
+      }
+      const gw = this.toWorld(m, g.local);
+      const dist = gw.distanceTo(playerW);
+      g.rig.group.position.set(g.local.x, d.deckY + 0.4, g.local.z);
+      // mirar al jugador
+      const look = Math.atan2(playerW.x - gw.x, playerW.z - gw.z) - m.heading;
+      g.rig.group.rotation.y = look;
+      // acercarse / ametrallar
+      if (dist > 11) {
+        const dirW = playerW.clone().sub(gw).normalize();
+        const sway = Math.sin(this.t * 2 + g.strafeSeed) * 0.35;
+        const step = dirW.clone().multiplyScalar(3.4 * dt);
+        step.x += -dirW.z * sway * dt * 3;
+        step.z += dirW.x * sway * dt * 3;
+        const nl = this.toLocal(m, gw.add(step));
+        g.local.x = clamp(nl.x, -d.railHalf + 1.2, d.railHalf - 1.2);
+        g.local.z = clamp(nl.z, -d.len / 2 + 3, d.len / 2 - 3);
+        // no atravesar cajas
+        for (const b of d.boxes) {
+          const px = g.local.x - b.x, pz = g.local.z - b.z;
+          const ox = b.hx + 0.7 - Math.abs(px);
+          const oz = b.hz + 0.7 - Math.abs(pz);
+          if (ox > 0 && oz > 0) {
+            if (ox < oz) g.local.x += Math.sign(px) * ox;
+            else g.local.z += Math.sign(pz) * oz;
+          }
+        }
+      }
+      // fuego en ráfagas
+      if (dist < 55) {
+        g.fireT -= dt;
+        if (g.burstLeft > 0) {
+          g.burstT -= dt;
+          if (g.burstT <= 0) {
+            g.burstT = 0.1;
+            g.burstLeft--;
+            this.guardShoot(g, gw, playerW, dist);
+          }
+        } else if (g.fireT <= 0) {
+          g.fireT = g.isBoss ? 1.3 : rand(1.5, 2.2);
+          g.burstLeft = g.isBoss ? 5 : 3;
+          g.burstT = 0;
+        }
+      }
+    }
+
+    // interacción con el capitán
+    const capW = this.toWorld(m, m.captainRig.group.position);
+    const capDist = capW.distanceTo(playerW);
+    this.canInteract = null;
+    this.progress = -1;
+    this.progressKind = null;
+    if (capDist < 5) {
+      if (m.boss && m.boss.alive) {
+        this.canInteract = "EL JEFE DE SEGURIDAD SIGUE VIVO — ELIMÍNALO";
+      } else {
+        this.canInteract = "APUNTA AL CAPITÁN — MANTÉN E PARA SECUESTRAR EL BARCO";
+        if (this.keys.has("KeyE")) {
+          this.progressKind = "hijack";
+          this.progress = clamp(this.progress + dt / 2.4, 0, 1);
+          if (this.progress >= 1) this.doHijack(m);
+        } else {
+          this.progress = 0;
+        }
+      }
+    }
+    if (this.progressKind !== "hijack") this.progress = -1;
+  }
+  private netT = 0;
+
+  private guardShoot(g: GuardEnt, gw: THREE.Vector3, playerW: THREE.Vector3, dist: number) {
+    const from = gw.clone().add(new THREE.Vector3(0, 1.5, 0));
+    this.muzzleFlash(from.clone());
+    this.sfx.enemyShot();
+    const acc = clamp((g.isBoss ? 0.6 : 0.45) - dist * 0.005, 0.1, 0.6);
+    const target = playerW.clone().add(new THREE.Vector3(0, 1.2, 0));
+    if (Math.random() < acc) {
+      this.tracer(from, target, 0xff5a4a);
+      this.damagePlayer(g.isBoss ? 9 : 6);
+      this.burst(target, 4, 0xff6a4a, 5, 0.3, 0.4, 4);
+    } else {
+      const miss = target.clone().add(new THREE.Vector3(rand(-3.5, 3.5), rand(-1.5, 2.5), rand(-3.5, 3.5)));
+      this.tracer(from, miss, 0xff5a4a);
+    }
+  }
+
+  private doHijack(m: Merchant) {
+    this.mode = "captain";
+    this.captainShip = m;
+    m.hijacked = true;
+    m.boarded = false;
+    m.state = "sail";
+    m.baseSpeed = 4.2;
+    this.shipHull = this.shipHullMax;
+    this.wanted = 5;
+    this.health = Math.min(100, this.health + 35);
+    this.sfx.horn();
+    this.sfx.jingle();
+    this.sellBeacon.visible = true;
+    // los guardias restantes se rinden
+    for (const g of m.guards) {
+      if (g.alive) { g.alive = false; g.fallT = 0.001; }
+    }
+    // el pirata toma el puente
+    const d = m.rig.deck;
+    this.pirate!.group.position.set(d.bridgeLocal.x - d.wid * 0.2, d.deckY + 0.4, d.bridgeLocal.z + 8.2);
+    this.pushMsg(`¡${m.name} SECUESTRADO! AHORA ERES EL CAPITÁN`, "good");
+    this.pushMsg("Lleva el barco al punto de venta (haz dorado en el radar). ¡Toda la policía te persigue!", "danger");
+  }
+
+  // ------------------------------------------------------------- modo capitán
+  private updateCaptain(dt: number) {
+    const m = this.captainShip!;
+    const k = this.keys;
+    const tIn = (k.has("KeyW") || k.has("ArrowUp") ? 1 : 0) - (k.has("KeyS") || k.has("ArrowDown") ? 0.5 : 0);
+    this.throttle = lerp(this.throttle, tIn, dt * 1.2);
+    this.shipSpeed = lerp(this.shipSpeed, this.throttle * m.baseSpeed, dt * 0.5);
+    const turnIn = (k.has("KeyA") || k.has("ArrowLeft") ? 1 : 0) - (k.has("KeyD") || k.has("ArrowRight") ? 1 : 0);
+    m.heading += turnIn * 0.28 * dt * clamp(Math.abs(this.shipSpeed) / 2, 0.3, 1);
+    const fwd = new THREE.Vector3(Math.sin(m.heading), 0, Math.cos(m.heading));
+    const pos = m.rig.group.position;
+    pos.addScaledVector(fwd, this.shipSpeed * dt);
+    this.clampMap(pos);
+    m.rig.group.rotation.y = m.heading;
+    const e = 4;
+    const hC = waveH(pos.x, pos.z, this.t) * 0.55;
+    const hF = waveH(pos.x + fwd.x * e, pos.z + fwd.z * e, this.t) * 0.55;
+    pos.y = hC;
+    m.rig.group.rotation.x = Math.atan2(hC - hF, e) * 0.5;
+
+    // espuma de proa
+    if (Math.abs(this.shipSpeed) > 1.5 && Math.random() < 0.5) {
+      const bowW = this.toWorld(m, new THREE.Vector3(rand(-4, 4), 0.6, m.rig.deck.len / 2));
+      this.spawnP(bowW, new THREE.Vector3(rand(-1.5, 1.5), rand(0.5, 2), rand(-1.5, 1.5)), 0.8, 2, 4.5, 0xd8f4f4, 0.5, 3, true);
+    }
+    // humo de chimenea
+    m.smokeT -= dt;
+    if (m.smokeT <= 0 && Math.abs(this.throttle) > 0.2) {
+      m.smokeT = 0.25;
+      const sp = this.toWorld(m, m.rig.deck.smokePoint);
+      this.smoke(sp, 1);
+    }
+
+    // vender
+    const dSell = pos.distanceTo(this.sellPoint);
+    this.canInteract = null;
+    this.progress = -1;
+    this.progressKind = null;
+    if (dSell < 110) {
+      if (Math.abs(this.shipSpeed) < 2.2) {
+        this.canInteract = "MANTÉN E PARA ATRACAR Y VENDER LA MERCANCÍA";
+        if (this.keys.has("KeyE")) {
+          this.progressKind = "sell";
+          this.progress = clamp(this.progress + dt / 2.6, 0, 1);
+          if (this.progress >= 1) this.sellCargo(m);
+        } else this.progress = 0;
+      } else {
+        this.canInteract = "REDUCE VELOCIDAD PARA ATRACAR";
+      }
+    }
+  }
+
+  private sellCargo(m: Merchant) {
+    this.money += m.value;
+    this.contracts++;
+    this.sfx.sell();
+    this.pushMsg(`MERCANCÍA VENDIDA: +$${m.value.toLocaleString("es-ES")} · TOTAL $${this.money.toLocaleString("es-ES")}`, "money");
+    this.pushMsg("Contrato completado. Nueva presa en el radar.", "good");
+    // alejar el barco vendido
+    m.state = "sold";
+    m.hijacked = false;
+    m.baseSpeed = 3;
+    const away = m.rig.group.position.clone().normalize().multiplyScalar(2600);
+    m.rig.group.position.add(away);
+    m.wp.copy(m.rig.group.position).add(new THREE.Vector3(rand(-800, 800), 0, rand(-800, 800)));
+    // quitar pirata del barco
+    if (this.pirate) { m.rig.group.remove(this.pirate.group); this.pirate = null; }
+    this.captainShip = null;
+    this.sellBeacon.visible = false;
+    // reaparecer en la lancha, reparado
+    this.mode = "sea";
+    this.craft.group.visible = true;
+    const kinds: MerchantKind[] = ["cargo", "tanker", "yacht", "liner"];
+    const nk = kinds[Math.floor(rand(0, Math.random() < 0.25 ? 4 : 3))];
+    const names = ["MV CORSAIRO", "MV NEPTUNO", "MV TEMPESTAD", "CARGUERO ORIÓN", "PETROLERO VULCANO"];
+    const ang = rand(0, Math.PI * 2);
+    const here = this.sellPoint.clone(); // referencia: cerca de la cala
+    const spawn = new THREE.Vector3(
+      clamp(here.x + Math.cos(ang) * rand(900, 1300), -MAP_LIMIT + 200, MAP_LIMIT - 200),
+      0,
+      clamp(here.z + Math.sin(ang) * rand(900, 1300), -MAP_LIMIT + 200, MAP_LIMIT - 200)
+    );
+    const pp = this.craft.group.position;
+    pp.set(spawn.x, waveH(spawn.x, spawn.z, this.t) + 0.4, spawn.z);
+    this.spawnMerchant(nk, names[Math.floor(rand(0, names.length))], 0, 0);
+    const nm = this.merchants[this.merchants.length - 1];
+    nm.rig.group.position.copy(spawn);
+    this.heading = Math.atan2(spawn.x - pp.x, spawn.z - pp.z);
+    this.speed = 0;
+    this.throttle = 0;
+    this.hull = Math.min(this.hullMax, this.hull + this.hullMax * 0.5);
+    this.health = Math.min(100, this.health + 40);
+    this.torps = CRAFTS[this.craftId].torpedoes;
+    this.wanted = 2;
+    this.submerged = false;
+    // limpiar mercantes vendidos y lejanos
+    this.merchants = this.merchants.filter((x) => {
+      if (x.state === "sold" || x.state === "sinking") {
+        if (x.rig.group.position.distanceTo(this.craft.group.position) > 1600) {
+          this.scene.remove(x.rig.group);
+          return false;
+        }
+      }
+      return true;
+    });
+  }
+
+  // ------------------------------------------------------------- mercantes IA
+  private updateMerchants(dt: number) {
+    // refuerzos: que nunca falten presas en el mar
+    const alive = this.merchants.filter((m) => m.state === "sail" || m.state === "disabled").length;
+    if (alive < 2 && Math.random() < dt * 0.35) {
+      const anchor = this.mode === "captain" && this.captainShip ? this.captainShip.rig.group.position : this.craft.group.position;
+      const ang = rand(0, Math.PI * 2);
+      const kinds: MerchantKind[] = ["cargo", "tanker", "yacht"];
+      this.spawnMerchant(kinds[Math.floor(rand(0, 3))], "MV FORTUNA", 0, 0);
+      const nm = this.merchants[this.merchants.length - 1];
+      nm.rig.group.position.set(
+        clamp(anchor.x + Math.cos(ang) * 1100, -MAP_LIMIT + 150, MAP_LIMIT - 150), 0,
+        clamp(anchor.z + Math.sin(ang) * 1100, -MAP_LIMIT + 150, MAP_LIMIT - 150)
+      );
+      nm.detected = false;
+      this.pushMsg("Nuevo contacto mercante entra en la zona", "info");
+    }
+    for (const m of this.merchants) {
+      const g = m.rig.group;
+      m.alertT = Math.max(0, m.alertT - dt);
+
+      // esquivar torpedos: los pesados giran lento
+      let dodging = false;
+      if (m.state === "sail" || m.state === "disabled") {
+        for (const t of this.torpedoes) {
+          const toT = t.mesh.position.clone().sub(g.position);
+          const dist = toT.length();
+          if (dist < 320) {
+            const closing = toT.normalize().dot(t.dir) < -0.55;
+            if (closing) {
+              dodging = true;
+              const away = Math.atan2(-toT.x, -toT.z) + Math.PI / 2;
+              // los cascos pesados giran lento: de lejos esquivan, de cerca no les da tiempo
+              m.heading += clamp(angDiff(m.heading, away), -0.09 * dt, 0.09 * dt) * 2.4;
+              if (m.state === "disabled") m.baseSpeed = 0;
+            }
+          }
+        }
+      }
+      if (dodging && Math.random() < 0.3 && m.alertT <= 0) {
+        this.pushMsg(`${m.name} detecta el torpedo y trata de girar...`, "warn");
+        m.alertT = 4;
+        this.sfx.alarm();
+      }
+
+      // navegación
+      if (m.state === "sail" && !m.hijacked && !m.boarded) {
+        const toWp = m.wp.clone().sub(g.position);
+        toWp.y = 0;
+        if (toWp.length() < 120) {
+          m.wp.set(rand(-2300, 2300), 0, rand(-2300, 2300));
+        }
+        const desired = Math.atan2(toWp.x, toWp.z);
+        m.heading += clamp(angDiff(m.heading, desired), -0.1 * dt, 0.1 * dt) * 3;
+        m.speed = lerp(m.speed, m.baseSpeed, dt * 0.4);
+      } else if (m.boarded && !m.hijacked) {
+        m.speed = lerp(m.speed, 0, dt * 1.2);
+      } else if (m.hijacked) {
+        m.speed = this.shipSpeed;
+      } else {
+        m.speed = lerp(m.speed, m.baseSpeed, dt * 0.3);
+      }
+      if (m.state === "sinking") m.speed = 0;
+      if (!m.hijacked) {
+        const fwd = new THREE.Vector3(Math.sin(m.heading), 0, Math.cos(m.heading));
+        g.position.addScaledVector(fwd, m.speed * dt);
+      }
+      g.rotation.y = m.heading;
+
+      // flotación
+      if (this.mode === "board" && m === this.boardShip) {
+        g.position.y = m.anchorY;
+        g.rotation.x = 0;
+        g.rotation.z = 0;
+      } else {
+        const h = waveH(g.position.x, g.position.z, this.t) * 0.55;
+        g.position.y = h;
+        const e = 5;
+        const fwd2 = new THREE.Vector3(Math.sin(m.heading), 0, Math.cos(m.heading));
+        const hF = waveH(g.position.x + fwd2.x * e, g.position.z + fwd2.z * e, this.t) * 0.55;
+        g.rotation.x = Math.atan2(h - hF, e) * 0.5;
+        g.rotation.z = Math.sin(this.t * 0.5 + g.position.x) * 0.012;
+      }
+
+      // hundimiento
+      if (m.state === "sinking") {
+        m.sinkT += dt / 9;
+        g.position.y -= dt * 1.3;
+        g.rotation.z = m.sinkT * 0.55;
+        if (Math.random() < 0.25) {
+          this.smoke(g.position.clone().add(new THREE.Vector3(rand(-8, 8), m.rig.deck.deckY, rand(-20, 20))), 1, true);
+        }
+        if (m.sinkT > 1.4) {
+          this.scene.remove(g);
+          m.state = "sold";
+          this.merchants = this.merchants.filter((x) => x !== m);
+        }
+      }
+
+      // humo si está averiado
+      if (m.state === "disabled") {
+        m.smokeT -= dt;
+        if (m.smokeT <= 0) {
+          m.smokeT = 0.16;
+          const sp = this.toWorld(m, m.rig.deck.smokePoint);
+          this.smoke(sp, 2, true);
+        }
+        m.rig.netMat.emissiveIntensity = 1.4 + Math.sin(this.t * 8) * 0.8;
+      }
+    }
+  }
+
+  // ------------------------------------------------------------- patrullas
+  private updatePatrols(dt: number) {
+    const desired = clamp(1 + this.wanted, 2, 5);
+    if (this.patrols.length < desired && Math.random() < dt * 0.4) {
+      this.spawnPatrol(rand(0, 6.28), rand(700, 1000));
+      this.pushMsg("Nueva patrullera en la zona", "warn");
+    }
+    const chaseTarget =
+      this.mode === "captain" && this.captainShip ? this.captainShip.rig.group.position
+        : this.mode === "board" && this.boardShip ? this.boardShip.rig.group.position
+        : this.craft.group.position;
+    for (const p of this.patrols) {
+      const g = p.rig.group;
+      const toT = chaseTarget.clone().sub(g.position);
+      toT.y = 0;
+      const dist = toT.length();
+      const chasing = this.wanted > 0;
+      if (chasing) {
+        const desired2 = Math.atan2(toT.x, toT.z);
+        p.heading += clamp(angDiff(p.heading, desired2), -1.1 * dt, 1.1 * dt);
+        p.speed = lerp(p.speed, dist > 55 ? 15.5 : 6, dt * 1.2);
+      } else {
+        const toWp = p.wp.clone().sub(g.position);
+        if (toWp.length() < 100) p.wp.set(rand(-2400, 2400), 0, rand(-2400, 2400));
+        const desired3 = Math.atan2(toWp.x, toWp.z);
+        p.heading += clamp(angDiff(p.heading, desired3), -0.7 * dt, 0.7 * dt);
+        p.speed = lerp(p.speed, 7, dt);
+      }
+      const fwd = new THREE.Vector3(Math.sin(p.heading), 0, Math.cos(p.heading));
+      g.position.addScaledVector(fwd, p.speed * dt);
+      g.position.x = clamp(g.position.x, -MAP_LIMIT - 200, MAP_LIMIT + 200);
+      g.position.z = clamp(g.position.z, -MAP_LIMIT - 200, MAP_LIMIT + 200);
+      const h = waveH(g.position.x, g.position.z, this.t);
+      g.position.y = h + 0.3;
+      g.rotation.y = p.heading;
+      const e = 3;
+      const hF = waveH(g.position.x + fwd.x * e, g.position.z + fwd.z * e, this.t);
+      g.rotation.x = Math.atan2(h - hF, e) * 0.6;
+      g.rotation.z = Math.sin(this.t * 2 + g.position.z) * 0.04;
+
+      // torreta apunta al objetivo
+      p.rig.turret.rotation.y = clamp(angDiff(p.heading, Math.atan2(toT.x, toT.z)), -1.3, 1.3);
+
+      // luces
+      if (chasing) {
+        const on = Math.floor(this.t * 5) % 2 === 0;
+        p.rig.lightA.intensity = on ? 260 : 0;
+        p.rig.lightB.intensity = on ? 0 : 260;
+      } else {
+        p.rig.lightA.intensity = 0;
+        p.rig.lightB.intensity = 0;
+      }
+
+      // fuego
+      if (chasing && dist < 190) {
+        p.fireT -= dt;
+        if (p.burstLeft > 0) {
+          p.burstT -= dt;
+          if (p.burstT <= 0) {
+            p.burstT = 0.085;
+            p.burstLeft--;
+            const muzzle = new THREE.Vector3();
+            p.rig.muzzle.getWorldPosition(muzzle);
+            this.muzzleFlash(muzzle);
+            this.sfx.enemyShot();
+            const targetP = chaseTarget.clone().add(new THREE.Vector3(0, this.mode === "captain" ? 9 : 1.5, 0));
+            const acc = clamp(0.5 - dist * 0.0016, 0.12, 0.5);
+            if (Math.random() < acc) {
+              this.tracer(muzzle, targetP, 0x6ad0ff);
+              this.damagePlayer(this.mode === "board" ? 5 : 4);
+            } else {
+              const miss = targetP.clone().add(new THREE.Vector3(rand(-7, 7), rand(-3, 5), rand(-7, 7)));
+              this.tracer(muzzle, miss, 0x6ad0ff);
+              if (Math.random() < 0.3) this.splash(miss.clone().setY(waveH(miss.x, miss.z, this.t)));
+            }
+          }
+        } else if (p.fireT <= 0) {
+          p.fireT = rand(1.4, 2.1);
+          p.burstLeft = 5;
+          p.burstT = 0;
+        }
+      }
+
+      // estela
+      if (Math.abs(p.speed) > 5 && Math.random() < 0.4) {
+        const stern = g.position.clone().addScaledVector(fwd, -10);
+        stern.y = h + 0.3;
+        this.spawnP(stern, new THREE.Vector3(rand(-1, 1), rand(0.3, 1), rand(-1, 1)), 0.6, 1.4, 2.8, 0xd8f4f4, 0.4, 1, true);
+      }
+
+      // arresto
+      if (chasing && dist < 34 && this.mode === "sea") {
+        if (Math.abs(this.speed) < 3.5) {
+          this.arrestT += dt;
+          if (this.arrestT > 1 && performance.now() - this.arrestWarnT > 4000) {
+            this.arrestWarnT = performance.now();
+            this.pushMsg("¡TE ESTÁN DANDO EL ALTO! ¡ACELERA O TE ARRESTAN!", "danger");
+          }
+          if (this.arrestT > 3.4) {
+            this.gameOver("capturado", "ARRESTADO POR LA POLICÍA MARÍTIMA", "Te esposaron en cubierta con las bodegas llenas. El juez no estuvo para bromas.");
+          }
+        } else {
+          this.arrestT = Math.max(0, this.arrestT - dt * 2);
+        }
+      } else if (chasing && dist < 48 && this.mode === "captain") {
+        if (Math.abs(this.shipSpeed) < 1.6) {
+          this.arrestT += dt;
+          if (this.arrestT > 1 && performance.now() - this.arrestWarnT > 4000) {
+            this.arrestWarnT = performance.now();
+            this.pushMsg("¡VAN A ABORDAR EL BARCO! ¡NO TE DETENGAS!", "danger");
+          }
+          if (this.arrestT > 3.4) {
+            this.gameOver("capturado", "ABORDAJE POLICIAL", "La patrulla tomó el puente y recuperó la mercancía. Fin del negocio.");
+          }
+        } else this.arrestT = Math.max(0, this.arrestT - dt * 2);
+      } else {
+        this.arrestT = Math.max(0, this.arrestT - dt * 2);
+      }
+    }
+  }
+
+  private updateWanted(dt: number) {
+    if (this.mode === "captain" || this.mode === "board") return;
+    if (this.wanted > 0) {
+      const anyClose = this.patrols.some((p) => p.rig.group.position.distanceTo(this.craft.group.position) < 550);
+      if (!anyClose) {
+        this.wantedDecayT += dt;
+        if (this.wantedDecayT > 22) {
+          this.wantedDecayT = 0;
+          this.wanted = clamp(this.wanted - 1, 0, 5);
+          if (this.wanted === 0) this.pushMsg("La patrulla perdió tu rastro", "good");
+        }
+      } else this.wantedDecayT = 0;
+    }
+  }
+
+  // ------------------------------------------------------------- FX update
+  private updateFx(dt: number) {
+    for (const p of this.particles) {
+      p.life -= dt;
+      p.vel.y -= p.grav * dt;
+      p.s.position.addScaledVector(p.vel, dt);
+      const k = 1 - p.life / p.maxLife;
+      p.s.scale.setScalar(lerp(p.s0, p.s1, k));
+      (p.s.material as THREE.SpriteMaterial).opacity = p.op * (p.life / p.maxLife);
+    }
+    this.particles = this.particles.filter((p) => {
+      if (p.life <= 0) {
+        this.scene.remove(p.s);
+        p.s.material.dispose();
+        return false;
+      }
+      return true;
+    });
+    for (const t of this.tracers) {
+      t.life -= dt;
+      (t.line.material as THREE.LineBasicMaterial).opacity = Math.max(0, t.life / 0.09) * 0.9;
+    }
+    this.tracers = this.tracers.filter((t) => {
+      if (t.life <= 0) {
+        this.scene.remove(t.line);
+        t.line.geometry.dispose();
+        (t.line.material as THREE.Material).dispose();
+        return false;
+      }
+      return true;
+    });
+    if (this.flashT > 0) {
+      this.flashT -= dt;
+      if (this.flashT <= 0) this.flashLight.intensity = 0;
+    }
+    this.shake = Math.max(0, this.shake - dt * 3.2);
+  }
+
+  // ------------------------------------------------------------- cámara
+  private updateCamera(dt: number) {
+    const targetPos = new THREE.Vector3();
+    const lookAt = new THREE.Vector3();
+    const back = new THREE.Vector3(Math.sin(this.lookYaw), 0, Math.cos(this.lookYaw));
+
+    if (this.mode === "sea") {
+      const p = this.craft.group.position;
+      const dist = this.zoom ? 8 : this.craftId === "tiburon" ? 17 : 13;
+      const height = this.submerged ? 4.5 : this.zoom ? 3 : 5.2;
+      targetPos.copy(p).addScaledVector(back, -dist).add(new THREE.Vector3(0, height, 0));
+      if (this.submerged) targetPos.y = Math.min(targetPos.y, p.y + 4.5);
+      lookAt.copy(p).add(new THREE.Vector3(0, this.submerged ? 0 : 2.2, 0)).addScaledVector(back, 8);
+    } else if (this.mode === "board") {
+      const pw = this.boardShip!.rig.group.localToWorld(this.pirate!.group.position.clone());
+      targetPos.copy(pw).addScaledVector(back, -5.4).add(new THREE.Vector3(0, 2.7 + Math.sin(this.lookPitch) * -2.5, 0));
+      targetPos.y = Math.max(targetPos.y, this.boardShip!.rig.group.position.y + this.boardShip!.rig.deck.deckY + 1);
+      lookAt.copy(pw).add(new THREE.Vector3(0, 1.7, 0)).addScaledVector(back, 6);
+      lookAt.y += this.lookPitch * 5;
+    } else {
+      const m = this.captainShip!;
+      const bridgeW = this.toWorld(m, m.rig.deck.bridgeLocal);
+      targetPos.copy(bridgeW).addScaledVector(back, -14).add(new THREE.Vector3(0, 7, 0));
+      lookAt.copy(bridgeW).addScaledVector(back, 70).add(new THREE.Vector3(0, -4 + this.lookPitch * 10, 0));
+    }
+
+    const lerpK = 1 - Math.exp(-dt * 7);
+    this.camPos.lerp(targetPos, lerpK);
+    this.camera.position.copy(this.camPos);
+    if (this.shake > 0) {
+      this.camera.position.x += rand(-1, 1) * this.shake * 0.28;
+      this.camera.position.y += rand(-1, 1) * this.shake * 0.22;
+    }
+    this.camera.lookAt(lookAt);
+    const targetFov = this.zoom ? 20 : this.mode === "sea" && Math.abs(this.speed) > 18 ? 76 : 70;
+    this.fov = lerp(this.fov, targetFov, dt * 6);
+    this.camera.fov = this.fov;
+    this.camera.updateProjectionMatrix();
+  }
+
+  // ------------------------------------------------------------- objetivo
+  private updateObjective() {
+    if (this.mode === "sea") {
+      if (!this.nearestTarget || this.nearestTarget.rig.group.position.distanceTo(this.craft.group.position) > 600) {
+        this.objective = "Navega y detecta un barco en el radar (contactos ámbar)";
+      } else if (this.blindSpot) {
+        this.objective = `Aborda por ${this.blindSpot} (zona ciega) — pulsa E`;
+      } else {
+        this.objective = `Acércate a ${this.nearestTarget.name} por proa o popa, fuera del arco de sus armas`;
+      }
+    } else if (this.mode === "board") {
+      const m = this.boardShip!;
+      if (m.boss && m.boss.alive) this.objective = "Elimina al JEFE DE SEGURIDAD (boina roja)";
+      else this.objective = "Ve al puente (popa) y apunta al CAPITÁN — mantén E";
+    } else {
+      this.objective = "Eres el capitán: lleva el barco al punto de venta dorado y atraca con E";
+    }
+  }
+
+  // ------------------------------------------------------------- radar / HUD
+  private buildRadar() {
+    const blips: RadarBlip[] = [];
+    const p = this.mode === "captain" && this.captainShip ? this.captainShip.rig.group.position : this.craft.group.position;
+    for (const i of this.islands) blips.push({ x: i.x, z: i.z, kind: "island" });
+    for (const m of this.merchants) {
+      if (m.state === "sinking" || m.state === "sold") continue;
+      blips.push({ x: m.rig.group.position.x, z: m.rig.group.position.z, kind: m.hijacked ? "target" : m.kind === "yacht" ? "yacht" : m.kind === "liner" ? "liner" : "merchant", label: m.name });
+    }
+    for (const pa of this.patrols) blips.push({ x: pa.rig.group.position.x, z: pa.rig.group.position.z, kind: "patrol" });
+    if (this.mode === "captain") blips.push({ x: this.sellPoint.x, z: this.sellPoint.z, kind: "sell" });
+    this.radar = {
+      px: p.x, pz: p.z,
+      heading: this.mode === "captain" && this.captainShip ? this.captainShip.heading : this.heading,
+      range: 900, blips,
+    };
+  }
+
+  private emitHud() {
+    const def = CRAFTS[this.craftId];
+    let target: HudData["target"] = null;
+    if (this.nearestTarget && this.mode === "sea") {
+      const m = this.nearestTarget;
+      const d = m.rig.group.position.distanceTo(this.craft.group.position);
+      if (d < 900) {
+        target = { name: m.name, kind: m.kind, dist: d, value: m.value };
+      }
+    }
+    const h: HudData = {
+      mode: this.mode,
+      health: Math.round(this.health),
+      hull: Math.round(this.hull),
+      hullMax: this.hullMax,
+      shipHull: Math.round(this.shipHull),
+      shipHullMax: this.shipHullMax,
+      speed: Math.abs(this.mode === "captain" ? this.shipSpeed : this.speed) * 1.94,
+      throttle: this.throttle,
+      wanted: this.wanted,
+      money: this.money,
+      ammo: this.mag,
+      magSize: 30,
+      reloading: this.reloading,
+      torps: this.torps,
+      torpsMax: def.torpedoes,
+      depth: this.depth,
+      submerged: this.submerged,
+      objective: this.objective,
+      target,
+      blindSpot: this.blindSpot,
+      canInteract: this.canInteract,
+      progress: this.progress,
+      zoom: this.zoom,
+      damageT: this.damageT,
+      hitT: this.hitT,
+      contracts: this.contracts,
+    };
+    this.cb.onHud(h);
+  }
+}
