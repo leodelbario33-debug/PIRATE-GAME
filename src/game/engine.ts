@@ -1142,10 +1142,10 @@ export class Game {
       }
       pc.pos.x = clamp(pc.pos.x, -MAP_LIMIT, MAP_LIMIT);
       pc.pos.z = clamp(pc.pos.z, -MAP_LIMIT, MAP_LIMIT);
-      // misiles VLS desde la cubierta
+      // misiles VLS desde la cubierta: dispara incluso a gran distancia
       this.pcMissileT -= dt;
-      if (this.wanted >= 2 && distP < 850 && this.pcMissileT <= 0) {
-        this.pcMissileT = 4.6;
+      if (this.wanted >= 1 && distP < 2600 && this.pcMissileT <= 0) {
+        this.pcMissileT = 3.1;
         for (const off of [-16, 16]) {
           const sp = pc.group.localToWorld(new THREE.Vector3(off, 26, -34));
           const gm = new THREE.Group();
@@ -1154,13 +1154,15 @@ export class Game {
           gm.add(body);
           gm.position.copy(sp);
           const aim = this.playerPosWorld().add(new THREE.Vector3(0, 3, 0));
-          const vel = aim.sub(sp).normalize().multiplyScalar(195);
+          const vel = aim.sub(sp).normalize().multiplyScalar(235);
           this.scene.add(gm);
-          this.enemyMissiles.push({ mesh: gm, vel, life: 7 });
+          this.enemyMissiles.push({ mesh: gm, vel, life: 12 });
         }
         this.sfx.jetMissile();
-        this.sfx.alarm();
-        this.pushMsg("¡SALVA DE MISILES DESDE EL PORTAAVIONES POLICIAL! Esquívelos", "danger");
+        if (distP < 1100) {
+          this.sfx.alarm();
+          this.pushMsg("¡SALVA DE MISILES DESDE EL PORTAAVIONES POLICIAL! Esquívelos", "danger");
+        }
       }
       pc.group.position.set(pc.pos.x, waveH(pc.pos.x, pc.pos.z, this.t) * 0.55, pc.pos.z);
       pc.group.rotation.y = pc.heading;
@@ -1177,10 +1179,10 @@ export class Game {
       }
     }
     const nearCV = this.mode === "jet" && this.jet && pc ? this.jet.pos.distanceTo(pc.pos) < 1300 : false;
-    const wantJets = this.wanted >= 4 || nearCV ? 4 : this.wanted >= 2 ? (this.mode === "jet" ? 3 : 2) : 0;
+    const wantJets = this.wanted >= 3 || nearCV ? 5 : this.wanted >= 1 ? (this.mode === "jet" ? 4 : 3) : 0;
     this.jetLaunchT -= dt;
     if (pc && this.policeJets.length < wantJets && this.jetLaunchT <= 0) {
-      this.jetLaunchT = 5;
+      this.jetLaunchT = 2.6;
       const jm = buildJetMesh(0xd8dde2, true);
       jm.flame.visible = true;
       this.scene.add(jm.group);
@@ -1198,7 +1200,7 @@ export class Game {
       pj.heading += clamp(angDiff(pj.heading, desiredYaw), -1.7 * dt, 1.7 * dt);
       const desiredPitch = Math.atan2(toT.y, Math.hypot(toT.x, toT.z));
       pj.pitch = lerp(pj.pitch, clamp(desiredPitch, -0.55, 0.55), dt * 1.6);
-      const disengage = this.wanted < 3;
+      const disengage = this.wanted < 1;
       pj.speed = lerp(pj.speed, disengage ? 320 : dist > 260 ? 300 : 215, dt * 0.8);
       const cp2 = Math.cos(pj.pitch);
       const fwd2 = new THREE.Vector3(Math.sin(pj.heading) * cp2, Math.sin(pj.pitch), Math.cos(pj.heading) * cp2);
@@ -1211,7 +1213,7 @@ export class Game {
       pj.group.rotation.y = pj.heading;
       pj.group.rotation.x = -pj.pitch;
       pj.flameG.scale.setScalar(0.85 + Math.sin(this.t * 40 + pj.pos.x) * 0.15);
-      if (!disengage && dist < 950) {
+      if (!disengage && dist < 1600) {
         pj.fireT -= dt;
         if (pj.fireT <= 0) {
           pj.fireT = rand(3.2, 4.8);
@@ -1221,9 +1223,9 @@ export class Game {
           gm.add(body);
           gm.position.copy(pj.pos).addScaledVector(fwd2, 5);
           const aim = this.playerPosWorld().add(new THREE.Vector3(0, this.mode === "jet" ? 0 : 2, 0));
-          const vel = aim.sub(gm.position).normalize().multiplyScalar(205);
+          const vel = aim.sub(gm.position).normalize().multiplyScalar(230);
           this.scene.add(gm);
-          this.enemyMissiles.push({ mesh: gm, vel, life: 6 });
+          this.enemyMissiles.push({ mesh: gm, vel, life: 9 });
           this.sfx.jetMissile();
           if (dist < 500) this.pushMsg("¡MISIL ENEMIGO EN CAMINO!", "danger");
         }
