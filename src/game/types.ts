@@ -15,6 +15,7 @@ export interface CraftDef {
   torpedoes: number;
   missiles: number; // misiles aéreos (arco balístico / aire-aire)
   missileKind?: "arc" | "dart"; // "dart": proyectil recto al punto marcado, sin curva ni guiado
+  flashCharges?: number; // cargas del modo FLASH (ráfaga de velocidad)
   jets?: number; // cazas disponibles en cubierta
   submarine: boolean;
   color: string;
@@ -104,7 +105,8 @@ export const CRAFTS: Record<CraftId, CraftDef> = {
     id: "rayo",
     name: "RAYO 360",
     cls: "CATAMARÁN DE CARRERAS 8×800 HP",
-    desc: "Ancho, bajo y rabioso: dos cascos gemelos, alerón trasero y 8 motores de 800 HP en fila. Corre a 360 NUDOS y gira sin esfuerzo. En lugar de misiles en arco lanza DARDOS: marcas el punto con la mira, pulsas ESPACIO y vuelan RECTOS al objetivo a más de 1200 m/s.",
+    desc: "Ancho, bajo y rabioso: dos cascos gemelos alargados con piso de cubierta, alerón y 8 motores de 800 HP. Corre a 360 NUDOS y gira sin esfuerzo. Lanza DARDOS rectos con ESPACIO. MODO FLASH (tecla 1, ×3, 10 s): sube a 450 NUDOS; durante el flash, la tecla 2 suelta un misil rasante que vuela sobre el agua a más de 3000 m/s e impacta de lleno en el casco del barco más cercano.",
+    flashCharges: 3,
     topSpeed: 152,
     accel: 16,
     turn: 3.4,
@@ -163,6 +165,9 @@ export interface HudData {
   alt: number; // altitud del caza (m)
   jetsLeft: number; // cazas restantes en el portaaviones
   missileWarn: { dist: number; angle: number } | null; // misil entrante: distancia y ángulo relativo
+  flashCharges: number; // cargas FLASH restantes
+  flashMax: number;
+  flashT: number; // segundos de FLASH activos (0 = apagado)
 }
 
 export interface RadarBlip {

@@ -162,6 +162,9 @@ export class Game {
   private aimTarget = "";
   private pcMissileT = 4;
   private missileWarn: { dist: number; angle: number } | null = null;
+  private flashCharges: number;
+  private flashBoostT = 0; // segundos restantes de FLASH activo
+  private flashDartUsed = false; // un misil rasante por activación
 
   // cuerda de abordaje (visible en la zona ciega)
   private ropeGeo = new THREE.BufferGeometry();
@@ -182,6 +185,7 @@ export class Game {
     this.hullMax = def.hull;
     this.torps = def.torpedoes;
     this.missiles = def.missiles;
+    this.flashCharges = def.flashCharges ?? 0;
 
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
@@ -646,9 +650,50 @@ export class Game {
     const k = this.keys;
     const tIn = (k.has("KeyW") || k.has("ArrowUp") ? 1 : 0) - (k.has("KeyS") || k.has("ArrowDown") ? 0.55 : 0);
     this.throttle = lerp(this.throttle, tIn, dt * 2.2);
+    // MODO FLASH (RAYO 360): tecla 1 activa/corta, dura 10 s, ×3 cargas
+    if (this.pressed.has("Digit1") && def.flashCharges) {
+      if (this.flashBoostT > 0) {
+        this.flashBoostT = 0;
+        this.pushMsg("FLASH cortado", "info");
+        this.sfx.flashOff();
+      } else if (this.flashCharges > 0) {
+        this.flashCharges--;
+        this.flashBoostT = 10;
+        this.flashDartUsed = false;
+        this.pushMsg("¡MODO FLASH! 10 s a 450 NUDOS · tecla 1 lo corta · tecla 2 suelta el misil rasante", "good");
+        this.sfx.flashOn();
+        this.shake = Math.min(2, this.shake + 0.5);
+      } else {
+        this.pushMsg("Sin cargas FLASH. Vende mercancía para reabastecer.", "warn");
+        this.sfx.empty();
+      }
+    }
+    if (this.flashBoostT > 0) {
+      this.flashBoostT = Math.max(0, this.flashBoostT - dt);
+      if (this.flashBoostT === 0) {
+        this.pushMsg("FLASH agotado", "warn");
+        this.sfx.flashOff();
+      }
+    }
+    const flashOn = this.craftId === "rayo" && this.flashBoostT > 0;
+    const flashK = flashOn ? 231.5 / def.topSpeed : 1; // 450 nudos
     const boost = k.has("ShiftLeft") && !def.submarine ? 1.22 : 1;
-    const target = this.throttle * def.topSpeed * boost * (this.submerged ? 0.62 : 1);
-    this.speed = lerp(this.speed, target, dt * (def.accel / 10) * 2.4);
+    const target = this.throttle * def.topSpeed * boost * flashK * (this.submerged ? 0.62 : 1);
+    this.speed = lerp(this.speed, target, dt * (def.accel / 10) * (flashOn ? 4.6 : 2.4));
+    // espuma extra de los motores durante el flash
+    if (flashOn && Math.random() < 0.85) {
+      for (const p of this.craft.enginePuffs) {
+        const wp = new THREE.Vector3();
+        p.getWorldPosition(wp);
+        this.spawnP(wp, new THREE.Vector3(rand(-1, 1), rand(0.5, 1.6), rand(-1, 1)), 0.6, rand(1.4, 2.6), 3, 0xaef4ff, 0.7, 0.5, true);
+      }
+    }
+    // tecla 2: misil rasante al barco más cercano (solo durante el FLASH, uno por carga)
+    if (this.pressed.has("Digit2") && this.craftId === "rayo") {
+      if (!flashOn) this.pushMsg("El misil rasante solo se suelta con el FLASH activo (tecla 1)", "warn");
+      else if (this.flashDartUsed) this.pushMsg("Ya soltaste el rasante de esta carga FLASH", "warn");
+      else this.launchSkimmer();
+    }
     const turnIn = (k.has("KeyA") || k.has("ArrowLeft") ? 1 : 0) - (k.has("KeyD") || k.has("ArrowRight") ? 1 : 0);
     const speedFactor = clamp(Math.abs(this.speed) / 6, 0.25, 1);
     this.heading += turnIn * def.turn * speedFactor * dt * Math.sign(this.speed >= 0 ? 1 : -1);
