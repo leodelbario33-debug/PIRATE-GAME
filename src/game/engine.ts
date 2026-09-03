@@ -3,7 +3,7 @@ import type { CraftId, GameCallbacks, HudData, MerchantKind, Mode, MsgKind, Rada
 import { CRAFTS, MERCHANT_INFO } from "./types";
 import { SFX } from "./audio";
 import {
-  buildGoFast, buildSub, buildMerchant, buildPatrol, buildIsland, buildCharacter, makeSea, makeSky, makeClouds,
+  buildGoFast, buildSub, buildRacer, buildMerchant, buildPatrol, buildIsland, buildCharacter, makeSea, makeSky, makeClouds,
   buildCarrier, buildJetMesh, buildPoliceCarrier, CARRIER_DECK,
   waveH, rand, clamp, lerp, angDiff,
 } from "./world";
@@ -85,6 +85,7 @@ export class Game {
   private missileCool = 0;
   private missilesFly: Missile[] = [];
   private missileHits = 0;
+  private darts: { mesh: THREE.Group; pos: THREE.Vector3; dir: THREE.Vector3; speed: number; life: number; total: number; traveled: number }[] = [];
 
   // aviación
   private jet: JetEnt | null = null;
@@ -234,7 +235,7 @@ export class Game {
     this.pTex = new THREE.CanvasTexture(cv);
 
     // jugador
-    this.craft = def.submarine ? buildSub(def) : def.id === "kraken" ? buildCarrier(def) : buildGoFast(def);
+    this.craft = def.submarine ? buildSub(def) : def.id === "kraken" ? buildCarrier(def) : def.id === "rayo" ? buildRacer(def) : buildGoFast(def);
     this.scene.add(this.craft.group);
     if (def.id === "kraken") {
       for (const z of [70, 30, -10]) {
@@ -596,6 +597,7 @@ export class Game {
     this.updatePatrols(dt);
     this.updateTorpedoes(dt);
     this.updateMissiles(dt);
+    this.updateDarts(dt);
     this.updatePoliceForces(dt);
     this.updateEnemyMissiles(dt);
     this.updateWanted(dt);
@@ -1315,6 +1317,96 @@ export class Game {
     }
   }
 
+  private spawnDart(start: THREE.Vector3, end: THREE.Vector3) {
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.22, 2.4, 6), new THREE.MeshStandardMaterial({ color: 0xf2f5f7, roughness: 0.35, metalness: 0.5 }));
+    body.rotation.x = Math.PI / 2;
+    g.add(body);
+    const nose = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.9, 6), new THREE.MeshStandardMaterial({ color: 0xff7a1a, roughness: 0.4 }));
+    nose.rotation.x = Math.PI / 2;
+    nose.position.z = 1.6;
+    g.add(nose);
+    const finMat = new THREE.MeshStandardMaterial({ color: 0x20262e, roughness: 0.6 });
+    const f1 = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.55, 0.55), finMat);
+    f1.position.z = -1.05;
+    g.add(f1);
+    const f2 = f1.clone();
+    f2.rotation.z = Math.PI / 2;
+    g.add(f2);
+    const dirv = end.clone().sub(start).normalize();
+    g.position.copy(start);
+    g.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), dirv);
+    this.scene.add(g);
+    this.darts.push({ mesh: g, pos: start.clone(), dir: dirv, speed: 1350, life: 2.8, total: start.distanceTo(end), traveled: 0 });
+    this.missiles--;
+    this.missileCool = 0.7;
+    this.sfx.jetMissile();
+    this.raiseWanted(2);
+    this.shake = Math.min(1.4, this.shake + 0.3);
+    this.pushMsg("¡DARDO LANZADO! Vuela recto al punto marcado", "info");
+  }
+
+  private updateDarts(dt: number) {
+    for (const d of this.darts) {
+      d.life -= dt;
+      const step = d.speed * dt;
+      d.traveled += step;
+      d.pos.addScaledVector(d.dir, step);
+      d.mesh.position.copy(d.pos);
+      this.spawnP(d.pos.clone(), new THREE.Vector3(rand(-0.3, 0.3), rand(-0.2, 0.4), rand(-0.3, 0.3)), 0.25, 0.5, 2.2, 0xffb870, 0.8, 0, true);
+      let hit = false;
+      // mercantes: caja del casco
+      for (const m of this.merchants) {
+        if (m.state === "sinking" || m.state === "sold" || m.hijacked) continue;
+        const local = this.toLocal(m, d.pos);
+        const dk = m.rig.deck;
+        if (Math.abs(local.x) < dk.wid / 2 + 2 && Math.abs(local.z) < dk.len / 2 + 4 && local.y > -6 && local.y < dk.deckY + 28) {
+          this.explosion(d.pos.clone(), 2);
+          this.missileHits++;
+          m.hp -= 38;
+          this.raiseWanted(3);
+          this.alertMerchant(m);
+          this.pushMsg(`¡DARDO IMPACTA EN ${m.name}! (−38)`, "danger");
+          this.finishImpact(m);
+          hit = true;
+          break;
+        }
+      }
+      if (!hit) {
+        for (const pt of this.patrols) {
+          if (pt.rig.group.position.distanceTo(d.pos) < 15) {
+            this.missileHits++;
+            this.explosion(pt.rig.group.position.clone().add(new THREE.Vector3(0, 2, 0)), 1.7);
+            this.destroyPatrol(pt);
+            hit = true;
+            break;
+          }
+        }
+      }
+      if (!hit && this.policeCarrier && this.policeCarrier.group.position.distanceTo(d.pos) < 60) {
+        this.missileHits++;
+        this.explosion(d.pos.clone(), 1.8);
+        this.damagePoliceCarrier(38);
+        hit = true;
+      }
+      if (!hit) {
+        for (const pj of this.policeJets) {
+          if (pj.pos.distanceTo(d.pos) < 9) { this.missileHits++; this.hitPoliceJet(pj, 60); hit = true; break; }
+        }
+      }
+      if (!hit && d.pos.y < waveH(d.pos.x, d.pos.z, this.t)) {
+        this.splash(d.pos.clone(), 1.2);
+        hit = true;
+      }
+      if (hit || d.traveled >= d.total || d.life <= 0) {
+        if (!hit) this.explosion(d.pos.clone(), 0.8);
+        this.scene.remove(d.mesh);
+        d.life = -1;
+      }
+    }
+    this.darts = this.darts.filter((d) => d.life > 0);
+  }
+
   private toLocal(m: Merchant, world: THREE.Vector3): THREE.Vector3 {
     const mp = m.rig.group.position;
     const dx = world.x - mp.x, dz = world.z - mp.z;
@@ -1373,6 +1465,11 @@ export class Game {
       start.y = Math.max(start.y, waveH(start.x, start.z, this.t)) + 1.5;
     }
     const dist = start.distanceTo(end);
+    // dardo del catamarán: vuela RECTO al punto marcado, sin arco ni guiado
+    if (CRAFTS[this.craftId].missileKind === "dart") {
+      this.spawnDart(start, end);
+      return;
+    }
     // cohete BR-8
     const g = new THREE.Group();
     const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.28, 2.6, 4, 8), new THREE.MeshStandardMaterial({ color: 0x5a6470, roughness: 0.4, metalness: 0.5 }));
@@ -2121,8 +2218,8 @@ export class Game {
         targetPos.copy(p).addScaledVector(back, -dist).add(new THREE.Vector3(0, height, 0));
         lookAt.copy(p).add(new THREE.Vector3(0, CARRIER_DECK.deckY * 0.55, 0)).addScaledVector(back, 30);
       } else {
-        const dist = this.zoom ? 8 : this.craftId === "tiburon" ? 17 : this.craftId === "viuda" ? 24 : 13;
-        const height = this.submerged ? 6.4 : this.zoom ? 3 : this.craftId === "viuda" ? 8 : 5.2;
+        const dist = this.zoom ? 8 : this.craftId === "tiburon" ? 17 : this.craftId === "viuda" ? 24 : this.craftId === "rayo" ? 19 : 13;
+        const height = this.submerged ? 6.4 : this.zoom ? 3 : this.craftId === "viuda" ? 8 : this.craftId === "rayo" ? 7 : 5.2;
         targetPos.copy(p).addScaledVector(back, -dist).add(new THREE.Vector3(0, height, 0));
         lookAt.copy(p).add(new THREE.Vector3(0, this.submerged ? 2.6 : 2.2, 0)).addScaledVector(back, 8);
       }

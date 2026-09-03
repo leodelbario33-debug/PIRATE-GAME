@@ -59,6 +59,21 @@ function drawBlueprint(cv: HTMLCanvasElement, id: CraftId) {
     label("MINIGUN M134", 226, 90);
     label("PERFIL BAJO", 130, 92);
     label("12 m", 150, 152);
+  } else if (id === "rayo") {
+    // catamarán ancho: dos cascos gemelos vistos de perfil + puente
+    poly([[70, 118], [250, 118], [300, 126], [288, 140], [70, 140]]);
+    poly([[84, 140], [268, 140], [256, 152], [92, 152]]);
+    rect(150, 102, 52, 16);
+    poly([[150, 102], [166, 92], [202, 92], [202, 102]]);
+    // alerón trasero
+    ctx.beginPath(); ctx.moveTo(84, 106); ctx.lineTo(118, 106); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(92, 118); ctx.lineTo(88, 106); ctx.moveTo(110, 118); ctx.lineTo(114, 106); ctx.stroke();
+    // 8 motores en la popa
+    for (let i = 0; i < 8; i++) rect(24 + i * 9.5, 122, 7, 22);
+    ctx.beginPath(); ctx.moveTo(28, 156); ctx.lineTo(96, 156); ctx.moveTo(28, 152); ctx.lineTo(28, 160); ctx.moveTo(96, 152); ctx.lineTo(96, 160); ctx.stroke();
+    label("8× 800 HP", 26, 174);
+    label("DARDOS RECTOS", 210, 88);
+    label("ANCHO 7 m", 150, 170);
   } else {
     ctx.beginPath(); ctx.ellipse(182, 146, 118, 17, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     ctx.beginPath(); ctx.ellipse(300, 146, 16, 12, 0, 0, Math.PI * 2); ctx.stroke();
@@ -172,7 +187,7 @@ export default function MenuScreen({ onStart }: { onStart: (id: CraftId) => void
 
         <div className="text-[12px] tracking-[0.35em] text-[#ffb347] hud-title mb-3">— ELIGE TU EMBARCACIÓN —</div>
         <div className="flex flex-wrap gap-4 items-stretch">
-          {(["viuda", "fantasma", "tiburon", "kraken"] as CraftId[]).map((id, i) => (
+          {(["viuda", "fantasma", "tiburon", "kraken", "rayo"] as CraftId[]).map((id, i) => (
             <CraftCard key={id} id={id} selected={sel === id} onPick={() => setSel(id)} delay={`${i * 0.6}s`} />
           ))}
           <div className="flex-1 min-w-[260px] flex flex-col gap-3">

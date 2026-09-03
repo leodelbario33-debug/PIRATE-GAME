@@ -1,4 +1,4 @@
-export type CraftId = "viuda" | "fantasma" | "tiburon" | "kraken";
+export type CraftId = "viuda" | "fantasma" | "tiburon" | "kraken" | "rayo";
 
 export interface CraftDef {
   id: CraftId;
@@ -14,6 +14,7 @@ export interface CraftDef {
   fireRate: number; // shots per second
   torpedoes: number;
   missiles: number; // misiles aéreos (arco balístico / aire-aire)
+  missileKind?: "arc" | "dart"; // "dart": proyectil recto al punto marcado, sin curva ni guiado
   jets?: number; // cazas disponibles en cubierta
   submarine: boolean;
   color: string;
@@ -98,6 +99,26 @@ export const CRAFTS: Record<CraftId, CraftDef> = {
     color: "#1a222c",
     displayKnots: 27,
     stats: { velocidad: 1, viraje: 4, blindaje: 5, potencia: 5 },
+  },
+  rayo: {
+    id: "rayo",
+    name: "RAYO 360",
+    cls: "CATAMARÁN DE CARRERAS 8×800 HP",
+    desc: "Ancho, bajo y rabioso: dos cascos gemelos, alerón trasero y 8 motores de 800 HP en fila. Corre a 360 NUDOS y gira sin esfuerzo. En lugar de misiles en arco lanza DARDOS: marcas el punto con la mira, pulsas ESPACIO y vuelan RECTOS al objetivo a más de 1200 m/s.",
+    topSpeed: 152,
+    accel: 16,
+    turn: 3.4,
+    hull: 90,
+    weaponName: "M2 + DARDOS RECTOS ×6",
+    weaponDmg: 10,
+    fireRate: 9,
+    torpedoes: 0,
+    missiles: 6,
+    missileKind: "dart",
+    submarine: false,
+    color: "#131c28",
+    displayKnots: 360,
+    stats: { velocidad: 5, viraje: 5, blindaje: 2, potencia: 5 },
   },
 };
 
