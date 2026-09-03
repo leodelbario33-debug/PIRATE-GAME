@@ -127,6 +127,14 @@ export class Game {
   private limitMsgT = 0;
   private sonarT = 0;
   private arrestWarnT = 0;
+  private lastZone: "proa" | "popa" | null = null;
+  private aimRange = -1;
+  private aimTarget = "";
+
+  // cuerda de abordaje (visible en la zona ciega)
+  private ropeGeo = new THREE.BufferGeometry();
+  private ropeLine: THREE.Line;
+  private ropeHook: THREE.Mesh;
 
   // input
   private keys = new Set<string>();
@@ -167,6 +175,19 @@ export class Game {
 
     this.flashLight = new THREE.PointLight(0xffc060, 0, 90);
     this.scene.add(this.flashLight);
+
+    // cuerda de abordaje con garfio (se tensa en la zona ciega)
+    this.ropeGeo.setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 1, 0)]);
+    this.ropeLine = new THREE.Line(this.ropeGeo, new THREE.LineBasicMaterial({ color: 0xe8c26a, transparent: true, opacity: 0.95 }));
+    this.ropeLine.visible = false;
+    this.ropeLine.frustumCulled = false;
+    this.scene.add(this.ropeLine);
+    this.ropeHook = new THREE.Mesh(
+      new THREE.ConeGeometry(0.24, 0.75, 6),
+      new THREE.MeshStandardMaterial({ color: 0x9aa4ad, metalness: 0.8, roughness: 0.35, flatShading: true })
+    );
+    this.ropeHook.visible = false;
+    this.scene.add(this.ropeHook);
 
     // textura de partículas
     const cv = document.createElement("canvas");
@@ -505,6 +526,13 @@ export class Game {
     (this.sky.material as THREE.ShaderMaterial).uniforms.uCam.value.copy(this.camera.position);
     seaMat.uniforms.uCam.value.copy(this.camera.position);
 
+    // pulso de respiración al apuntar con la óptica (SHIFT = aguantar la respiración)
+    if (this.zoom && this.mode === "sea") {
+      const steady = this.keys.has("ShiftLeft") || this.keys.has("ShiftRight") ? 0.15 : 1;
+      this.lookYaw += Math.sin(this.t * 1.15) * 0.0034 * steady;
+      this.lookPitch = clamp(this.lookPitch + Math.sin(this.t * 0.75 + 1.7) * 0.0026 * steady, -0.55, 0.62);
+    }
+
     if (this.mode === "sea") this.updateSea(dt);
     else if (this.mode === "board") this.updateBoard(dt);
     else this.updateCaptain(dt);
@@ -562,16 +590,21 @@ export class Game {
     pos.addScaledVector(fwd, this.speed * dt);
     this.clampMap(pos);
 
-    // sumergirse / emerger
+    // periscopio: el casco se hunde, solo el cañón asoma sobre el agua
     if (this.pressed.has("KeyC") && def.submarine) {
       this.submerged = !this.submerged;
-      this.pushMsg(this.submerged ? "Sumergido. La patrulla te pierde el rastro." : "Emergiendo. Cañón de cubierta listo.", "info");
+      this.pushMsg(
+        this.submerged
+          ? "MODO PERISCOPIO — casco bajo el agua, SOLO el cañón asoma. Dispara sin ser visto."
+          : "Emergiendo. Cañón de cubierta listo.",
+        "info"
+      );
       this.sfx.splashDown();
       this.splash(pos.clone().add(new THREE.Vector3(0, 1, 0)), 1.6);
     }
-    const targetY = this.submerged ? -11 : waveH(pos.x, pos.z, this.t) + (def.submarine ? 0.55 : 0.35);
-    pos.y = lerp(pos.y, targetY, dt * (this.submerged ? 1.4 : 6));
-    this.depth = -Math.min(0, pos.y - 1);
+    const targetY = this.submerged ? -3.6 : waveH(pos.x, pos.z, this.t) + (def.submarine ? 0.55 : 0.35);
+    pos.y = lerp(pos.y, targetY, dt * (this.submerged ? 1.6 : 6));
+    this.depth = -Math.min(0, pos.y);
     this.craft.group.rotation.y = this.heading;
     if (!this.submerged) {
       const e = 2.5;
@@ -593,13 +626,18 @@ export class Game {
       this.spawnP(stern, new THREE.Vector3(rand(-1, 1), rand(0.4, 1.4), rand(-1, 1)), 0.7, rand(1.5, 3), 3.5, 0xd8f4f4, 0.5, 0.6, true);
     }
 
-    // torreta sigue la vista
+    // torreta sigue la vista; bajo el agua, el mástil periscópico es quien apunta
     const relYaw = angDiff(this.heading, this.lookYaw);
     this.craft.turret.rotation.y = clamp(relYaw, -1.2, 1.2);
+    if (this.craft.peri) {
+      this.craft.peri.yaw.rotation.y = clamp(relYaw, -1.35, 1.35);
+      this.craft.peri.pitch.rotation.x = clamp(-this.lookPitch, -0.4, 0.25);
+    }
 
-    // disparo montado (solo superficie)
+    // disparo montado: en superficie o desde el periscopio
+    const periReady = def.submarine && this.submerged && !!this.craft.peri;
     this.fireCool -= dt;
-    if (this.firing && !this.submerged && this.fireCool <= 0) {
+    if (this.firing && (!this.submerged || periReady) && this.fireCool <= 0) {
       this.fireCool = 1 / def.fireRate;
       this.fireCraftGun();
     }
@@ -614,6 +652,7 @@ export class Game {
     this.blindSpot = null;
     this.canInteract = null;
     this.nearestTarget = null;
+    let zoneShip: Merchant | null = null;
     let best = 1e9;
     for (const m of this.merchants) {
       if (m.state === "sinking" || m.state === "sold" || m.hijacked || m.boarded) continue;
@@ -631,14 +670,45 @@ export class Game {
         const dotB = mf.dot(toP);
         if (Math.abs(dotB) > 0.72) {
           this.blindSpot = dotB > 0 ? "proa" : "popa";
+          zoneShip = m;
           if (Math.abs(this.speed) < 7) {
-            this.canInteract = `LANZAR GARFIO POR ${this.blindSpot.toUpperCase()} — PULSA E`;
+            this.canInteract = `CUERDA LISTA POR ${this.blindSpot.toUpperCase()} — PULSA E PARA SUBIR`;
             if (this.pressed.has("KeyE")) this.startBoarding(m, this.blindSpot);
           } else {
             this.canInteract = `ZONA CIEGA (${this.blindSpot.toUpperCase()}) — REDUCE VELOCIDAD`;
           }
         }
       }
+    }
+
+    // cuerda de abordaje: se tiende del garfio a la barandilla dentro de la zona ciega
+    if (zoneShip && this.blindSpot) {
+      const dk = zoneShip.rig.deck;
+      const p1 = new THREE.Vector3();
+      this.craft.bowAnchor.getWorldPosition(p1);
+      const local = zoneShip.rig.group.worldToLocal(this.craft.group.position.clone());
+      const railX = (local.x >= 0 ? 1 : -1) * dk.railHalf;
+      const zL = clamp(local.z, -dk.len / 2 + 4, dk.len / 2 - 4);
+      const p2 = zoneShip.rig.group.localToWorld(new THREE.Vector3(railX, dk.deckY + 1.5, zL));
+      const attr = this.ropeGeo.attributes.position as THREE.BufferAttribute;
+      attr.setXYZ(0, p1.x, p1.y, p1.z);
+      attr.setXYZ(1, p2.x, p2.y, p2.z);
+      attr.needsUpdate = true;
+      this.ropeGeo.computeBoundingSphere();
+      this.ropeHook.position.copy(p2);
+      this.ropeHook.rotation.set(Math.PI, 0, 0);
+      this.ropeLine.visible = true;
+      this.ropeHook.visible = true;
+    } else {
+      this.ropeLine.visible = false;
+      this.ropeHook.visible = false;
+    }
+    if (this.blindSpot !== this.lastZone) {
+      if (this.blindSpot) {
+        this.sfx.rope();
+        this.pushMsg("Garfio enganchado a la barandilla — la cuerda está tensa", "good");
+      }
+      this.lastZone = this.blindSpot;
     }
 
     // límite del mapa
@@ -666,8 +736,10 @@ export class Game {
 
   private fireCraftGun() {
     const def = CRAFTS[this.craftId];
+    const usePeri = this.craftId === "tiburon" && this.submerged && !!this.craft.peri;
     const muzzle = new THREE.Vector3();
-    this.craft.muzzle.getWorldPosition(muzzle);
+    if (usePeri) this.craft.peri!.muzzle.getWorldPosition(muzzle);
+    else this.craft.muzzle.getWorldPosition(muzzle);
     this.muzzleFlash(muzzle, this.craftId === "tiburon");
     this.sfx.shot(this.craftId === "tiburon");
     const dir = this.camDir();
@@ -1396,7 +1468,8 @@ export class Game {
             p.rig.muzzle.getWorldPosition(muzzle);
             this.muzzleFlash(muzzle);
             this.sfx.enemyShot();
-            const targetP = chaseTarget.clone().add(new THREE.Vector3(0, this.mode === "captain" ? 9 : 1.5, 0));
+            const aimY = this.mode === "captain" ? 9 : Math.max(1.6, waveH(chaseTarget.x, chaseTarget.z, this.t) + 1.4);
+            const targetP = chaseTarget.clone().add(new THREE.Vector3(0, aimY, 0));
             const acc = clamp(0.5 - dist * 0.0016, 0.12, 0.5);
             if (Math.random() < acc) {
               this.tracer(muzzle, targetP, 0x6ad0ff);
@@ -1514,10 +1587,9 @@ export class Game {
     if (this.mode === "sea") {
       const p = this.craft.group.position;
       const dist = this.zoom ? 8 : this.craftId === "tiburon" ? 17 : 13;
-      const height = this.submerged ? 4.5 : this.zoom ? 3 : 5.2;
+      const height = this.submerged ? 6.4 : this.zoom ? 3 : 5.2;
       targetPos.copy(p).addScaledVector(back, -dist).add(new THREE.Vector3(0, height, 0));
-      if (this.submerged) targetPos.y = Math.min(targetPos.y, p.y + 4.5);
-      lookAt.copy(p).add(new THREE.Vector3(0, this.submerged ? 0 : 2.2, 0)).addScaledVector(back, 8);
+      lookAt.copy(p).add(new THREE.Vector3(0, this.submerged ? 2.6 : 2.2, 0)).addScaledVector(back, 8);
     } else if (this.mode === "board") {
       const pw = this.boardShip!.rig.group.localToWorld(this.pirate!.group.position.clone());
       targetPos.copy(pw).addScaledVector(back, -5.4).add(new THREE.Vector3(0, 2.7 + Math.sin(this.lookPitch) * -2.5, 0));
@@ -1582,8 +1654,43 @@ export class Game {
     };
   }
 
+  // telémetro de la mira: qué hay bajo el punto de mira y a qué distancia
+  private computeAim() {
+    this.aimRange = -1;
+    this.aimTarget = "";
+    if (!this.zoom || this.mode !== "sea") return;
+    const dirv = this.camDir();
+    const cp = this.camera.position;
+    let best = 1e9;
+    let bestLabel = "";
+    const consider = (p: THREE.Vector3, label: string, size: number) => {
+      const to = p.clone().sub(cp);
+      const dist = to.length();
+      if (dist < 2) return;
+      const ang = Math.acos(clamp(to.normalize().dot(dirv), -1, 1));
+      const tol = Math.max(0.016, Math.atan2(size, dist));
+      if (ang < tol && dist < best) { best = dist; bestLabel = label; }
+    };
+    for (const m of this.merchants) {
+      if (m.state === "sinking" || m.state === "sold") continue;
+      const p = m.rig.group.position.clone(); p.y = 7;
+      consider(p, m.name, m.rig.deck.len * 0.34);
+    }
+    for (const pt of this.patrols) {
+      const p = pt.rig.group.position.clone(); p.y = 3;
+      consider(p, "PATRULLERA", 14);
+    }
+    if (this.captainShip) {
+      const p = this.captainShip.rig.group.position.clone(); p.y = 9;
+      consider(p, `${this.captainShip.name} (TUYO)`, this.captainShip.rig.deck.len * 0.34);
+    }
+    this.aimRange = best < 1e9 ? best : -1;
+    this.aimTarget = bestLabel;
+  }
+
   private emitHud() {
     const def = CRAFTS[this.craftId];
+    this.computeAim();
     let target: HudData["target"] = null;
     if (this.nearestTarget && this.mode === "sea") {
       const m = this.nearestTarget;
@@ -1619,6 +1726,8 @@ export class Game {
       damageT: this.damageT,
       hitT: this.hitT,
       contracts: this.contracts,
+      aimRange: this.aimRange,
+      aimTarget: this.aimTarget,
     };
     this.cb.onHud(h);
   }

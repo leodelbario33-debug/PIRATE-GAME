@@ -171,6 +171,7 @@ export interface PlayerRig {
   enginePuffs: THREE.Object3D[];
   bowAnchor: THREE.Object3D;
   sternAnchor: THREE.Object3D;
+  peri?: { yaw: THREE.Group; pitch: THREE.Group; muzzle: THREE.Object3D };
 }
 
 export function buildGoFast(def: CraftDef): PlayerRig {
@@ -283,9 +284,27 @@ export function buildSub(def: CraftDef): PlayerRig {
     g.add(p);
     enginePuffs.push(p);
   }
+  // mástil periscópico con cañón: al sumergirse, es lo único que asoma del agua
+  const periYaw = new THREE.Group();
+  periYaw.position.set(0, 4.2, -1);
+  const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.18, 4.4, 8), M.steel);
+  mast.position.y = 2.2;
+  periYaw.add(mast);
+  const periPitch = new THREE.Group();
+  periPitch.position.y = 4.5;
+  periPitch.add(box(0.66, 0.5, 1.15, M.dark, 0, 0, 0));
+  const pbarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 2.2, 8), M.black);
+  pbarrel.rotation.x = Math.PI / 2;
+  pbarrel.position.set(0, 0.06, 1.35);
+  periPitch.add(pbarrel);
+  const pmuzzle = new THREE.Object3D();
+  pmuzzle.position.set(0, 0.06, 2.55);
+  periPitch.add(pmuzzle);
+  periYaw.add(periPitch);
+  g.add(periYaw);
   const bowAnchor = new THREE.Object3D(); bowAnchor.position.set(0, -0.4, 14.5); g.add(bowAnchor);
   const sternAnchor = new THREE.Object3D(); sternAnchor.position.set(0, -0.4, -15); g.add(sternAnchor);
-  return { group: g, turret, muzzle, enginePuffs, bowAnchor, sternAnchor };
+  return { group: g, turret, muzzle, enginePuffs, bowAnchor, sternAnchor, peri: { yaw: periYaw, pitch: periPitch, muzzle: pmuzzle } };
 }
 
 // ----------------------------- barcos mercantes -----------------------------

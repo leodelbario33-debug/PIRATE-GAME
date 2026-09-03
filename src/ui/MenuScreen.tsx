@@ -119,9 +119,12 @@ function CraftCard({ id, selected, onPick, delay }: { id: CraftId; selected: boo
         <StatPips label="BLINDAJE" v={def.stats.blindaje} />
         <StatPips label="POTENCIA" v={def.stats.potencia} />
       </div>
-      <div className="mt-2 pt-2 border-t border-white/10 flex justify-between text-[11px]">
-        <span className="text-white/45">{def.weaponName}</span>
-        {def.torpedoes > 0 && <span className="text-[#ffb347] font-bold">{def.torpedoes} TORPEDOS</span>}
+      <div className="mt-2 pt-2 border-t border-white/10 flex items-center justify-between gap-2 text-[11px]">
+        <span className="text-white/45 truncate">{def.weaponName}</span>
+        <span className="flex items-center gap-2 shrink-0">
+          <span className="font-mono font-bold text-[#ffce73]">{Math.round(def.topSpeed * 1.94)} kn</span>
+          {def.torpedoes > 0 && <span className="text-[#ffb347] font-bold">{def.torpedoes} TORPEDOS</span>}
+        </span>
       </div>
     </button>
   );

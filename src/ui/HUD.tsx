@@ -111,6 +111,75 @@ function Radar({ getRadar }: { getRadar: () => RadarSnap }) {
   return <canvas ref={ref} width={190} height={190} />;
 }
 
+function RopeIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="w-6 h-6 text-[#ffd9a0]" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+      <path d="M12 2v9" strokeDasharray="2.4 1.6" />
+      <path d="M12 11c0 3-3.5 3.4-3.5 6.2A3.2 3.2 0 0 0 12 20.5a3.2 3.2 0 0 0 3.2-3.3" />
+      <path d="M15.2 17.2 17 15.6" />
+    </svg>
+  );
+}
+
+function ScopeOverlay({ hud }: { hud: HudData }) {
+  const S = "min(88vh, 130vw)";
+  const hasTarget = hud.aimRange >= 0;
+  const isHostile = hud.aimTarget.includes("PATRULLERA");
+  return (
+    <div className="absolute inset-0 pointer-events-none select-none">
+      {/* máscara circular de la mira */}
+      <div className="scope-mask absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full" style={{ width: S, height: S }} />
+      {/* retícula */}
+      <svg className="reticle-glow absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" style={{ width: S, height: S }} viewBox="0 0 100 100" fill="none">
+        <circle cx="50" cy="50" r="48.5" stroke="rgba(255,206,115,0.35)" strokeWidth="0.25" />
+        <circle cx="50" cy="50" r="33" stroke="rgba(255,206,115,0.13)" strokeWidth="0.18" />
+        <line x1="50" y1="2.5" x2="50" y2="44" stroke="#ffce73" strokeWidth="0.22" />
+        <line x1="50" y1="56" x2="50" y2="97.5" stroke="#ffce73" strokeWidth="0.22" />
+        <line x1="2.5" y1="50" x2="44" y2="50" stroke="#ffce73" strokeWidth="0.22" />
+        <line x1="56" y1="50" x2="97.5" y2="50" stroke="#ffce73" strokeWidth="0.22" />
+        {[14, 24, 34, 66, 76, 86].map((v) => (
+          <g key={v} fill="#ffce73">
+            <circle cx="50" cy={v} r="0.55" />
+            <circle cx={v} cy="50" r="0.55" />
+          </g>
+        ))}
+        {[42, 46, 54, 58].map((v) => (
+          <g key={v} stroke="rgba(255,206,115,0.55)" strokeWidth="0.18">
+            <line x1={v} y1="48.7" x2={v} y2="51.3" />
+            <line x1="48.7" y1={v} x2="51.3" y2={v} />
+          </g>
+        ))}
+        <circle cx="50" cy="50" r="0.9" fill={hasTarget ? (isHostile ? "#ff5a4e" : "#3dffb0") : "#ffce73"} />
+      </svg>
+      {/* lecturas de la óptica */}
+      <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" style={{ width: S, height: S }}>
+        <div className="absolute font-mono text-[11px] tracking-[0.22em] text-[#ffce73]/90" style={{ left: "24%", top: "22%" }}>
+          ÓPTICA ×8 {hud.submerged ? "· PERISCOPIO" : ""}
+        </div>
+        <div
+          className={`absolute font-mono text-[11px] tracking-[0.22em] text-right ${isHostile ? "text-[#ff5a4e]" : "text-[#ffce73]/90"}`}
+          style={{ right: "24%", top: "22%" }}
+        >
+          {hud.aimTarget || "—"}
+        </div>
+        <div className="absolute left-1/2 -translate-x-1/2 text-center" style={{ top: "69%" }}>
+          <div className={`font-mono text-xl font-bold tracking-[0.14em] ${hasTarget ? "text-[#ffce73]" : "text-white/35"}`}>
+            {hasTarget ? `${Math.round(hud.aimRange)} m` : "SIN OBJETIVO"}
+          </div>
+          {hasTarget && (
+            <div className="font-mono text-[10px] tracking-[0.3em] text-white/45 mt-0.5">
+              CAÍDA {(hud.aimRange * 0.004).toFixed(1)} MIL
+            </div>
+          )}
+        </div>
+        <div className="absolute left-1/2 -translate-x-1/2 font-mono text-[10px] tracking-[0.25em] text-white/40" style={{ top: "77%" }}>
+          MANTÉN SHIFT — AGUANTAR RESPIRACIÓN
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface Props {
   hud: HudData;
   msgs: Msg[];
@@ -130,8 +199,8 @@ export default function HUD({ hud, msgs, getRadar }: Props) {
       : mode === "captain"
         ? "W/S acelerar · A/D timón · E atracar en el punto de venta"
         : isSub
-          ? "W/S acelerar · A/D timón · CLIC cañón · ESPACIO torpedo · C sumergirse · E abordar · CLIC DER prismáticos"
-          : "W/S acelerar · A/D timón · CLIC ametralladora · SHIFT turbo · E abordar · CLIC DER prismáticos";
+          ? "W/S acelerar · A/D timón · CLIC cañón periscópico · ESPACIO torpedo · C periscopio (casco bajo el agua) · E subir por la cuerda · CLIC DER mira ×8"
+          : "W/S acelerar · A/D timón · CLIC ametralladora · SHIFT turbo · E subir por la cuerda · CLIC DER mira ×8 (SHIFT: pulso firme)";
 
   return (
     <div className="absolute inset-0 pointer-events-none z-20 font-[family-name:var(--font-ui)]">
@@ -139,12 +208,9 @@ export default function HUD({ hud, msgs, getRadar }: Props) {
       {dmg && (
         <div key={hud.damageT} className="dmg-flash absolute inset-0" style={{ boxShadow: "inset 0 0 140px 50px rgba(255,40,30,0.55)" }} />
       )}
-      {/* overlay submarino */}
-      {hud.submerged && (
-        <div className="uw-shimmer absolute inset-0" style={{ background: "linear-gradient(180deg, rgba(2,26,34,0.55), rgba(1,14,22,0.75))" }} />
-      )}
-      {/* viñeta prismáticos */}
-      {hud.zoom && (
+      {/* mira de francotirador / viñeta de aumento */}
+      {hud.zoom && mode === "sea" && <ScopeOverlay hud={hud} />}
+      {hud.zoom && mode !== "sea" && (
         <div className="absolute inset-0" style={{ boxShadow: "inset 0 0 180px 90px rgba(0,0,0,0.92)" }} />
       )}
 
@@ -221,7 +287,7 @@ export default function HUD({ hud, msgs, getRadar }: Props) {
             </div>
             {isSub && (
               <div className="mt-1 text-[12px] font-bold" style={{ color: hud.submerged ? "#29e0d2" : "rgba(255,255,255,0.5)" }}>
-                PROF. {hud.depth.toFixed(0)} m · {hud.submerged ? "SUMERGIDO" : "SUPERFICIE"}
+                PROF. {hud.depth.toFixed(0)} m · {hud.submerged ? "PERISCOPIO" : "SUPERFICIE"}
               </div>
             )}
           </div>
@@ -239,7 +305,7 @@ export default function HUD({ hud, msgs, getRadar }: Props) {
       </div>
 
       {/* crosshair */}
-      {mode !== "captain" && (
+      {mode !== "captain" && !(hud.zoom && mode === "sea") && (
         <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
           <div className="relative w-10 h-10">
             <div className="absolute left-1/2 top-1/2 w-1 h-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/90" />
@@ -266,11 +332,21 @@ export default function HUD({ hud, msgs, getRadar }: Props) {
 
       {/* prompt central */}
       {hud.canInteract && (
-        <div className="absolute left-1/2 top-[62%] -translate-x-1/2">
-          <div className="msg-in hud-panel hud-panel-amber px-5 py-2">
-            <span className="hud-title text-[15px] text-[#ffb347] pulse-glow tracking-wider">{hud.canInteract}</span>
+        hud.canInteract.includes("CUERDA") ? (
+          <div className="absolute left-1/2 top-[62%] -translate-x-1/2">
+            <div className="msg-in flex items-center gap-3 rounded border-2 border-[#ffb054] bg-[#2a1a05]/90 px-5 py-2.5 shadow-[0_0_34px_rgba(255,150,40,0.35)]">
+              <RopeIcon />
+              <span className="rounded bg-[#ffb054] px-2.5 py-0.5 text-lg font-black leading-none text-[#241203]">E</span>
+              <span className="hud-title pulse-glow text-[15px] tracking-wider text-[#ffd9a0]">{hud.canInteract}</span>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="absolute left-1/2 top-[62%] -translate-x-1/2">
+            <div className="msg-in hud-panel hud-panel-amber px-5 py-2">
+              <span className="hud-title text-[15px] text-[#ffb347] pulse-glow tracking-wider">{hud.canInteract}</span>
+            </div>
+          </div>
+        )
       )}
       {hud.blindSpot && mode === "sea" && (
         <div className="absolute left-1/2 top-[55%] -translate-x-1/2 text-[13px] font-bold tracking-[0.25em] text-[#3dffb0]">

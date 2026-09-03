@@ -23,10 +23,10 @@ export const CRAFTS: Record<CraftId, CraftDef> = {
     id: "viuda",
     name: "LA VIUDA",
     cls: "NARCOLANCHA 4× FUERABORDA",
-    desc: "Casco negro de 14 metros con cuatro motores de 450 HP. Rápida, brutal y famosa en toda la costa. Monta una Browning M2 calibre .50 en proa.",
-    topSpeed: 23,
-    accel: 7.5,
-    turn: 1.5,
+    desc: "Casco negro de 14 metros con cuatro motores de 600 HP: vuela a 75 NUDOS sobre el oleaje. Monta una Browning M2 calibre .50 en proa.",
+    topSpeed: 38.7,
+    accel: 9.5,
+    turn: 1.6,
     hull: 100,
     weaponName: "AMETRALLADORA .50",
     weaponDmg: 11,
@@ -40,10 +40,10 @@ export const CRAFTS: Record<CraftId, CraftDef> = {
     id: "fantasma",
     name: "FANTASMA X",
     cls: "INTERCEPTOR FURTIVO",
-    desc: "Perfil bajo, pintura mate que desaparece al atardecer y una minigun M134 de 6 cañones que sierra el acero. Menos casco, más cadencia.",
-    topSpeed: 20,
-    accel: 8.5,
-    turn: 1.85,
+    desc: "Perfil bajo, pintura mate que desaparece al atardecer y una minigun M134 de 6 cañones que sierra el acero. 50 NUDOS: menos casco, más cadencia.",
+    topSpeed: 25.8,
+    accel: 9,
+    turn: 1.9,
     hull: 80,
     weaponName: "MINIGUN M134",
     weaponDmg: 5,
@@ -57,10 +57,10 @@ export const CRAFTS: Record<CraftId, CraftDef> = {
     id: "tiburon",
     name: "TIBURÓN NEGRO",
     cls: "MINISUBMARINO DE ATAQUE",
-    desc: "Casco de presión negro con 6 torpedos MK-37. Sumérgete, caza cargueros por la quilla y desaparece antes de que llegue la patrulla. Cañón de cubierta al emerger.",
-    topSpeed: 11.5,
-    accel: 4.5,
-    turn: 1.05,
+    desc: "Casco de presión negro con 6 torpedos MK-37. Con C sumerges el casco: solo el cañón periscópico asoma sobre las olas para cazar sin ser visto.",
+    topSpeed: 16.5,
+    accel: 5.5,
+    turn: 1.1,
     hull: 170,
     weaponName: "CAÑÓN 40mm + TORPEDOS",
     weaponDmg: 14,
@@ -105,6 +105,8 @@ export interface HudData {
   damageT: number;
   hitT: number;
   contracts: number;
+  aimRange: number; // metros al objetivo bajo la mira (-1 sin objetivo)
+  aimTarget: string;
 }
 
 export interface RadarBlip {

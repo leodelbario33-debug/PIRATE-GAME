@@ -14,10 +14,10 @@ export function PauseScreen({ onResume, onRestart, onMenu }: { onResume: () => v
           <div><b className="text-[#29e0d2]">A / D</b> — girar el timón</div>
           <div><b className="text-[#29e0d2]">RATÓN</b> — apuntar · clic dispara</div>
           <div><b className="text-[#29e0d2]">E</b> — abordar · secuestrar · atracar</div>
-          <div><b className="text-[#29e0d2]">C</b> — sumergirse / emerger</div>
+          <div><b className="text-[#29e0d2]">C</b> — periscopio: hunde el casco, deja el cañón fuera</div>
           <div><b className="text-[#29e0d2]">ESPACIO</b> — lanzar torpedo</div>
           <div><b className="text-[#29e0d2]">R</b> — recargar el AK</div>
-          <div><b className="text-[#29e0d2]">CLIC DER.</b> — prismáticos</div>
+          <div><b className="text-[#29e0d2]">CLIC DER.</b> — mira ×8 (SHIFT: aguantar respiración)</div>
           <div><b className="text-[#29e0d2]">SHIFT</b> — turbo / correr</div>
           <div><b className="text-[#29e0d2]">M</b> — silenciar · <b className="text-[#29e0d2]">ESC</b> pausa</div>
         </div>

@@ -160,4 +160,9 @@ export class SFX {
   }
   splashDown() { this.noiseBurst(0.8, 300, 0.5); this.tone(300, 0.5, 0.2, "sine", 90); }
   uiClick() { this.tone(640, 0.05, 0.12, "square", 500); }
+  rope() {
+    // silbido de la cuerda al volar + clac del garfio contra la barandilla
+    this.noiseBurst(0.3, 950, 0.22, "bandpass");
+    setTimeout(() => { this.tone(1500, 0.07, 0.28, "square", 480); this.noiseBurst(0.08, 2600, 0.14, "highpass"); }, 250);
+  }
 }

@@ -14,6 +14,7 @@ const DEFAULT_HUD: HudData = {
   torps: 0, torpsMax: 0, depth: 0, submerged: false,
   objective: "", target: null, blindSpot: null, canInteract: null, progress: -1,
   zoom: false, damageT: -10000, hitT: -10000, contracts: 0,
+  aimRange: -1, aimTarget: "",
 };
 
 export default function App() {
