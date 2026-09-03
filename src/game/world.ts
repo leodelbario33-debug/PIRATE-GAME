@@ -652,12 +652,18 @@ export function buildIsland(r: number, palms: number, hasCove: boolean) {
 // ----------------------------- portaaviones -----------------------------
 export const CARRIER_DECK = { len: 240, wid: 46, deckY: 21 };
 
+// azules de la policía marítima
+const M_POLICE_HULL = new THREE.MeshStandardMaterial({ color: 0x10379e, roughness: 0.55, metalness: 0.25, flatShading: true });
+const M_POLICE_DEEP = new THREE.MeshStandardMaterial({ color: 0x0a2266, roughness: 0.7, flatShading: true });
+const M_POLICE_DECK = new THREE.MeshStandardMaterial({ color: 0x14284e, roughness: 0.9, flatShading: true });
+const M_POLICE_BRIGHT = new THREE.MeshStandardMaterial({ color: 0x2a6ad0, roughness: 0.6, flatShading: true });
+
 function carrierBase(len: number, wid: number, deckY: number, police: boolean) {
   const g = new THREE.Group();
-  const hullMat = police ? M.patrolWhite : M.hullDark;
-  const deckMat = police ? M.deckSteel : M.black;
+  const hullMat = police ? M_POLICE_HULL : M.hullDark;
+  const deckMat = police ? M_POLICE_DECK : M.black;
   // casco
-  g.add(box(wid - 8, 6, len * 0.94, police ? M.hullBlue : M.hullRed, 0, -1.6, 0));
+  g.add(box(wid - 8, 6, len * 0.94, police ? M_POLICE_DEEP : M.hullRed, 0, -1.6, 0));
   g.add(box(wid - 4, deckY - 4, len * 0.98, hullMat, 0, (deckY - 4) / 2 + 1, 0));
   // proa
   const bow = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 1, len * 0.1, 4, 1), hullMat);
@@ -721,9 +727,40 @@ export function buildCarrier(def: CraftDef): PlayerRig {
 
 export function buildPoliceCarrier(): THREE.Group {
   const { g, len, deckY } = carrierBase(200, 42, 19, true);
-  // rótulo lateral azul
-  g.add(box(0.6, 3, 60, new THREE.MeshStandardMaterial({ color: 0x1a4fc0, roughness: 0.6, flatShading: true }), 20.6, 10, 10));
-  g.add(box(0.6, 3, 60, new THREE.MeshStandardMaterial({ color: 0x1a4fc0, roughness: 0.6, flatShading: true }), -20.6, 10, 10));
+  // rótulos laterales azul brillante
+  g.add(box(0.6, 3, 60, M_POLICE_BRIGHT, 20.6, 10, 10));
+  g.add(box(0.6, 3, 60, M_POLICE_BRIGHT, -20.6, 10, 10));
+  g.add(box(30, 0.5, 6, M_POLICE_BRIGHT, -6, deckY + 0.85, len * 0.3));
+  // ---- armamento de cubierta ----
+  // dos torretas CIWS (cañón automático) en los extremos de proa y popa
+  const mkCiws = (z: number) => {
+    const t = new THREE.Group();
+    t.add(box(2.4, 2.4, 2.8, M.white, 0, 1.2, 0));
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 3.6, 8), M.steel);
+    barrel.rotation.x = Math.PI / 2;
+    barrel.position.set(0, 2.4, 2.2);
+    t.add(barrel);
+    const dome = new THREE.Mesh(new THREE.SphereGeometry(1.5, 8, 6), M.white);
+    dome.position.y = 3.1;
+    dome.scale.y = 0.7;
+    t.add(dome);
+    t.position.set(0, deckY + 0.7, z);
+    g.add(t);
+  };
+  mkCiws(len * 0.42);
+  mkCiws(-len * 0.42);
+  // lanzadores verticales de misiles (VLS) a babor, con tapas
+  for (let i = 0; i < 3; i++) {
+    const v = new THREE.Group();
+    v.add(box(4.4, 1.6, 4.4, M_POLICE_DEEP, 0, 0.8, 0));
+    for (let cx = 0; cx < 2; cx++) {
+      for (let cz = 0; cz < 2; cz++) {
+        v.add(box(1.7, 0.18, 1.7, M.steel, -1 + cx * 2, 1.68, -1 + cz * 2));
+      }
+    }
+    v.position.set(-12, deckY + 0.7, len * 0.18 - i * 12);
+    g.add(v);
+  }
   // cazas aparcados (estáticos)
   for (const z of [40, -10, -60]) {
     const j = buildJetMesh(0xd8dde2, true);

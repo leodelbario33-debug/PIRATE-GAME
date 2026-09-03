@@ -141,6 +141,7 @@ export interface HudData {
   gear: boolean; // tren de aterrizaje del caza
   alt: number; // altitud del caza (m)
   jetsLeft: number; // cazas restantes en el portaaviones
+  missileWarn: { dist: number; angle: number } | null; // misil entrante: distancia y ángulo relativo
 }
 
 export interface RadarBlip {

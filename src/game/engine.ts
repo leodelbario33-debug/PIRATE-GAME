@@ -1297,6 +1297,20 @@ export class Game {
       if (em.life <= 0) { this.scene.remove(em.mesh); return false; }
       return true;
     });
+    // aviso del misil entrante más cercano (para esquivarlo a tiempo)
+    this.missileWarn = null;
+    const pw = this.playerPosWorld();
+    const hd = this.mode === "jet" && this.jet ? this.jet.heading : this.heading;
+    let best = 560;
+    for (const em of this.enemyMissiles) {
+      const dx = em.mesh.position.x - pw.x;
+      const dz = em.mesh.position.z - pw.z;
+      const d = Math.hypot(dx, dz);
+      if (d < best) {
+        best = d;
+        this.missileWarn = { dist: d, angle: Math.atan2(dx, dz) - hd };
+      }
+    }
   }
 
   private toLocal(m: Merchant, world: THREE.Vector3): THREE.Vector3 {
@@ -2273,6 +2287,7 @@ export class Game {
       gear: this.jet ? this.jet.gear : true,
       alt: this.jet ? Math.max(0, this.jet.pos.y - waveH(this.jet.pos.x, this.jet.pos.z, this.t)) : 0,
       jetsLeft: this.parkedJets.length,
+      missileWarn: this.missileWarn,
     };
     this.cb.onHud(h);
   }
