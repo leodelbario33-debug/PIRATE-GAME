@@ -15,6 +15,11 @@ export class SFX {
   private jetNoise: AudioBufferSourceNode | null = null;
   private jetFilter: BiquadFilterNode | null = null;
   private jetGain: GainNode | null = null;
+  private jetWhine: OscillatorNode | null = null;
+  private jetWhineG: GainNode | null = null;
+  private jetHiss: AudioBufferSourceNode | null = null;
+  private jetHissG: GainNode | null = null;
+  private jetLow: BiquadFilterNode | null = null;
 
   ensure() {
     if (this.ctx) {
@@ -177,49 +182,85 @@ export class SFX {
     setTimeout(() => { this.tone(1500, 0.07, 0.28, "square", 480); this.noiseBurst(0.08, 2600, 0.14, "highpass"); }, 250);
   }
 
-  /** rugido de reactor: dos osciladores + ruido de turbina */
+  /** reactor realista por capas: grave de compresor + rugido + silbido de turbina + siseo de aire */
   jet(on: boolean, power = 0, burner = false) {
     if (!this.ctx || !this.master) return;
     if (on && !this.jetOsc) {
       const c = this.ctx;
-      this.jetOsc = c.createOscillator();
-      this.jetOsc.type = "sawtooth";
-      this.jetOsc.frequency.value = 72;
-      this.jetOsc2 = c.createOscillator();
-      this.jetOsc2.type = "sawtooth";
-      this.jetOsc2.frequency.value = 108;
       const len = c.sampleRate;
       const buf = c.createBuffer(1, len, c.sampleRate);
       const d = buf.getChannelData(0);
       for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+      this.jetGain = c.createGain();
+      this.jetGain.gain.value = 0;
+      this.jetGain.connect(this.master);
+      // 1) grave profundo: dos dientes desacordados por un paso bajo
+      this.jetOsc = c.createOscillator();
+      this.jetOsc.type = "sawtooth";
+      this.jetOsc.frequency.value = 52;
+      this.jetOsc2 = c.createOscillator();
+      this.jetOsc2.type = "sawtooth";
+      this.jetOsc2.frequency.value = 55.5;
+      this.jetLow = c.createBiquadFilter();
+      this.jetLow.type = "lowpass";
+      this.jetLow.frequency.value = 150;
+      this.jetLow.Q.value = 1.1;
+      const lowG = c.createGain();
+      lowG.gain.value = 0.5;
+      this.jetOsc.connect(this.jetLow);
+      this.jetOsc2.connect(this.jetLow);
+      this.jetLow.connect(lowG);
+      lowG.connect(this.jetGain);
+      // 2) rugido medio: ruido por banda
       this.jetNoise = c.createBufferSource();
       this.jetNoise.buffer = buf;
       this.jetNoise.loop = true;
       this.jetFilter = c.createBiquadFilter();
       this.jetFilter.type = "bandpass";
-      this.jetFilter.frequency.value = 700;
-      this.jetFilter.Q.value = 0.6;
-      this.jetGain = c.createGain();
-      this.jetGain.gain.value = 0;
-      const ng = c.createGain();
-      ng.gain.value = 0.5;
-      this.jetOsc.connect(this.jetGain);
-      this.jetOsc2.connect(this.jetGain);
+      this.jetFilter.frequency.value = 620;
+      this.jetFilter.Q.value = 0.55;
+      const midG = c.createGain();
+      midG.gain.value = 0.42;
       this.jetNoise.connect(this.jetFilter);
-      this.jetFilter.connect(ng);
-      ng.connect(this.jetGain);
-      this.jetGain.connect(this.master);
+      this.jetFilter.connect(midG);
+      midG.connect(this.jetGain);
+      // 3) silbido de turbina
+      this.jetWhine = c.createOscillator();
+      this.jetWhine.type = "sine";
+      this.jetWhine.frequency.value = 820;
+      this.jetWhineG = c.createGain();
+      this.jetWhineG.gain.value = 0.05;
+      this.jetWhine.connect(this.jetWhineG);
+      this.jetWhineG.connect(this.jetGain);
+      // 4) siseo de aire a alta velocidad
+      this.jetHiss = c.createBufferSource();
+      this.jetHiss.buffer = buf;
+      this.jetHiss.loop = true;
+      const hf = c.createBiquadFilter();
+      hf.type = "highpass";
+      hf.frequency.value = 2600;
+      this.jetHissG = c.createGain();
+      this.jetHissG.gain.value = 0;
+      this.jetHiss.connect(hf);
+      hf.connect(this.jetHissG);
+      this.jetHissG.connect(this.jetGain);
       this.jetOsc.start();
       this.jetOsc2.start();
       this.jetNoise.start();
+      this.jetWhine.start();
+      this.jetHiss.start();
     }
-    if (this.jetOsc && this.jetGain && this.jetFilter) {
-      const t = this.ctx.currentTime;
-      const f = 60 + power * 130 + (burner ? 55 : 0);
-      this.jetOsc.frequency.setTargetAtTime(f, t, 0.12);
-      this.jetOsc2!.frequency.setTargetAtTime(f * 1.5 + 8, t, 0.12);
-      this.jetFilter.frequency.setTargetAtTime(500 + power * 1600 + (burner ? 900 : 0), t, 0.15);
-      this.jetGain.gain.setTargetAtTime(on ? 0.055 + power * 0.105 + (burner ? 0.05 : 0) : 0, t, on ? 0.15 : 0.3);
+    if (this.jetOsc && this.jetGain) {
+      const t = this.ctx!.currentTime;
+      const f = 44 + power * 46 + (burner ? 26 : 0);
+      this.jetOsc.frequency.setTargetAtTime(f, t, 0.16);
+      this.jetOsc2!.frequency.setTargetAtTime(f * 1.06 + 2, t, 0.16);
+      this.jetLow!.frequency.setTargetAtTime(130 + power * 260 + (burner ? 240 : 0), t, 0.2);
+      this.jetFilter!.frequency.setTargetAtTime(420 + power * 1100 + (burner ? 700 : 0), t, 0.18);
+      this.jetWhine!.frequency.setTargetAtTime(650 + power * 1500 + (burner ? 500 : 0) + Math.sin(t * 9) * 14, t, 0.12);
+      this.jetWhineG!.gain.setTargetAtTime(on ? 0.028 + power * 0.05 : 0, t, 0.15);
+      this.jetHissG!.gain.setTargetAtTime(on ? power * 0.05 + (burner ? 0.05 : 0) : 0, t, 0.2);
+      this.jetGain.gain.setTargetAtTime(on ? 0.10 + power * 0.16 + (burner ? 0.09 : 0) : 0, t, on ? 0.18 : 0.35);
     }
   }
   gearSfx() {

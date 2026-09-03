@@ -134,6 +134,7 @@ export class Game {
   private flashT = 0;
   private shake = 0;
   private camPos = new THREE.Vector3(0, 8, -20);
+  private camRoll = 0;
 
   // estado
   private wanted = 0;
@@ -609,7 +610,8 @@ export class Game {
     // reactor del caza
     if (this.mode === "jet" && this.jet) {
       const burner = (this.keys.has("ShiftLeft") || this.keys.has("ShiftRight")) && this.jet.throttle > 0.85 && this.jet.speed > 60;
-      this.sfx.jet(true, this.jet.throttle, burner);
+      const p = clamp(Math.max(this.jet.throttle * 0.55, this.jet.speed / 520), 0.08, 1);
+      this.sfx.jet(true, p, burner);
     } else {
       this.sfx.jet(false);
     }
@@ -1027,14 +1029,23 @@ export class Game {
     }
     const burner = (k.has("ShiftLeft") || k.has("ShiftRight")) && j.throttle > 0.85;
     const maxS = burner ? 514 : 440; // hasta ~1000 nudos
-    j.speed = lerp(j.speed, j.throttle * maxS, dt * (j.speed < 70 ? 1.9 : burner ? 1.5 : 0.9));
-    const yawK = j.speed > 70 ? 1.6 : 0.7;
-    j.heading += clamp(angDiff(j.heading, this.lookYaw), -yawK * dt, yawK * dt);
-    if (j.speed > 62) j.pitch = lerp(j.pitch, clamp(-this.lookPitch, -1.05, 1.05) * 0.92, dt * 2.6);
-    else j.pitch = lerp(j.pitch, 0, dt * 4);
+    j.speed = lerp(j.speed, j.throttle * maxS, dt * (j.speed < 70 ? 2.1 : burner ? 1.6 : 1.0));
+    // vuelo natural: el morro sigue al puntero con autoridad real y virajes con alabeo
+    const airborne = j.speed > 62;
+    const auth = airborne ? clamp(j.speed / 200, 0.45, 1.15) : 0.3;
+    const yawErr = angDiff(j.heading, this.lookYaw);
+    const maxYaw = 2.5 * auth;
+    const dYaw = clamp(yawErr, -maxYaw * dt, maxYaw * dt);
+    j.heading += dYaw;
+    const targetPitch = airborne ? clamp(this.lookPitch * 1.55, -1.0, 1.0) : 0;
+    j.pitch = lerp(j.pitch, targetPitch, dt * (airborne ? 3.0 : 5.0));
     const rollIn = (k.has("KeyA") || k.has("ArrowLeft") ? 1 : 0) - (k.has("KeyD") || k.has("ArrowRight") ? 1 : 0);
-    j.roll = lerp(j.roll, rollIn * 0.85, dt * 3.2);
-    j.heading += rollIn * 0.55 * dt * clamp(j.speed / 120, 0.2, 1);
+    // alabeo coordinado: el caza se inclina hacia dentro de la curva, como uno real
+    const bank = clamp((-dYaw / Math.max(dt, 1e-4)) * 1.15, -1.05, 1.05);
+    const targetRoll = airborne ? clamp(bank + rollIn * 0.7, -1.25, 1.25) : 0;
+    j.roll = lerp(j.roll, targetRoll, dt * 3.6);
+    j.heading += rollIn * 0.7 * dt * clamp(j.speed / 120, 0.15, 1);
+    if (!airborne && Math.abs(j.roll) > 0.02) j.roll = lerp(j.roll, 0, dt * 6);
     const cp = Math.cos(j.pitch);
     const fwd = new THREE.Vector3(Math.sin(j.heading) * cp, Math.sin(j.pitch), Math.cos(j.heading) * cp);
     j.pos.addScaledVector(fwd, j.speed * dt);
@@ -2066,10 +2077,13 @@ export class Game {
     } else if (this.mode === "jet" && this.jet) {
       const j = this.jet;
       const cp = Math.cos(j.pitch);
-      const fwd = new THREE.Vector3(Math.sin(j.heading) * cp, Math.sin(j.pitch), Math.cos(j.heading) * cp);
-      const dist = this.zoom ? 16 : 26;
-      targetPos.copy(j.pos).addScaledVector(fwd, -dist).add(new THREE.Vector3(0, 7.5, 0));
-      lookAt.copy(j.pos).addScaledVector(fwd, 60);
+      const fwd = new THREE.Vector3(Math.sin(j.heading) * cp, Math.sin(j.pitch) * 0.45, Math.cos(j.heading) * cp).normalize();
+      const spd = clamp(j.speed / 514, 0, 1);
+      const dist = this.zoom ? 42 : 15 + spd * 24;
+      const height = this.zoom ? 12 : 5 + spd * 4.5;
+      targetPos.copy(j.pos).addScaledVector(fwd, -dist).add(new THREE.Vector3(0, height, 0));
+      lookAt.copy(j.pos).addScaledVector(fwd, 50 + spd * 60);
+      this.camRoll = j.roll * 0.55;
     } else {
       const m = this.captainShip!;
       const bridgeW = this.toWorld(m, m.rig.deck.bridgeLocal);
@@ -2077,7 +2091,8 @@ export class Game {
       lookAt.copy(bridgeW).addScaledVector(back, 70).add(new THREE.Vector3(0, -4 + this.lookPitch * 10, 0));
     }
 
-    const lerpK = 1 - Math.exp(-dt * 7);
+    if (this.mode !== "jet") this.camRoll = 0;
+    const lerpK = 1 - Math.exp(-dt * (this.mode === "jet" ? 10 : 7));
     this.camPos.lerp(targetPos, lerpK);
     this.camera.position.copy(this.camPos);
     if (this.shake > 0) {
@@ -2085,7 +2100,11 @@ export class Game {
       this.camera.position.y += rand(-1, 1) * this.shake * 0.22;
     }
     this.camera.lookAt(lookAt);
-    const targetFov = this.zoom ? 20 : this.mode === "sea" && Math.abs(this.speed) > 18 ? 76 : 70;
+    if (this.camRoll !== 0) this.camera.rotateZ(this.camRoll);
+    const jetSpd = this.jet ? clamp(this.jet.speed / 514, 0, 1) : 0;
+    const targetFov = this.zoom
+      ? this.mode === "jet" ? 26 : 20
+      : this.mode === "jet" ? 74 + jetSpd * 22 : this.mode === "sea" && Math.abs(this.speed) > 18 ? 76 : 70;
     this.fov = lerp(this.fov, targetFov, dt * 6);
     this.camera.fov = this.fov;
     this.camera.updateProjectionMatrix();
