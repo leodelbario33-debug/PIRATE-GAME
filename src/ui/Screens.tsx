@@ -35,6 +35,7 @@ const CAUSE_COLOR: Record<GameOverInfo["cause"], string> = {
   capturado: "#ff3b30",
   hundido: "#ffb347",
   muerto: "#ff5a4a",
+  estrellado: "#29e0d2",
 };
 
 export function GameOverScreen({ info, onRetry, onMenu }: { info: GameOverInfo; onRetry: () => void; onMenu: () => void }) {

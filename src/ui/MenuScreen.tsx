@@ -172,7 +172,7 @@ export default function MenuScreen({ onStart }: { onStart: (id: CraftId) => void
 
         <div className="text-[12px] tracking-[0.35em] text-[#ffb347] hud-title mb-3">— ELIGE TU EMBARCACIÓN —</div>
         <div className="flex flex-wrap gap-4 items-stretch">
-          {(["viuda", "fantasma", "tiburon"] as CraftId[]).map((id, i) => (
+          {(["viuda", "fantasma", "tiburon", "kraken"] as CraftId[]).map((id, i) => (
             <CraftCard key={id} id={id} selected={sel === id} onPick={() => setSel(id)} delay={`${i * 0.6}s`} />
           ))}
           <div className="flex-1 min-w-[260px] flex flex-col gap-3">
