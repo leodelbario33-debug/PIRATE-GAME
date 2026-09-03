@@ -2064,10 +2064,18 @@ export class Game {
 
     if (this.mode === "sea") {
       const p = this.craft.group.position;
-      const dist = this.zoom ? 8 : this.craftId === "tiburon" ? 17 : 13;
-      const height = this.submerged ? 6.4 : this.zoom ? 3 : 5.2;
-      targetPos.copy(p).addScaledVector(back, -dist).add(new THREE.Vector3(0, height, 0));
-      lookAt.copy(p).add(new THREE.Vector3(0, this.submerged ? 2.6 : 2.2, 0)).addScaledVector(back, 8);
+      if (this.craftId === "kraken") {
+        // el portaaviones es gigante: cámara fuera, bien alta y alejada
+        const dist = this.zoom ? 150 : 118;
+        const height = this.zoom ? 70 : 58;
+        targetPos.copy(p).addScaledVector(back, -dist).add(new THREE.Vector3(0, height, 0));
+        lookAt.copy(p).add(new THREE.Vector3(0, CARRIER_DECK.deckY * 0.55, 0)).addScaledVector(back, 30);
+      } else {
+        const dist = this.zoom ? 8 : this.craftId === "tiburon" ? 17 : 13;
+        const height = this.submerged ? 6.4 : this.zoom ? 3 : 5.2;
+        targetPos.copy(p).addScaledVector(back, -dist).add(new THREE.Vector3(0, height, 0));
+        lookAt.copy(p).add(new THREE.Vector3(0, this.submerged ? 2.6 : 2.2, 0)).addScaledVector(back, 8);
+      }
     } else if (this.mode === "board") {
       const pw = this.boardShip!.rig.group.localToWorld(this.pirate!.group.position.clone());
       targetPos.copy(pw).addScaledVector(back, -5.4).add(new THREE.Vector3(0, 2.7 + Math.sin(this.lookPitch) * -2.5, 0));
