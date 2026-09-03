@@ -2063,6 +2063,13 @@ export class Game {
       targetPos.y = Math.max(targetPos.y, this.boardShip!.rig.group.position.y + this.boardShip!.rig.deck.deckY + 1);
       lookAt.copy(pw).add(new THREE.Vector3(0, 1.7, 0)).addScaledVector(back, 6);
       lookAt.y += this.lookPitch * 5;
+    } else if (this.mode === "jet" && this.jet) {
+      const j = this.jet;
+      const cp = Math.cos(j.pitch);
+      const fwd = new THREE.Vector3(Math.sin(j.heading) * cp, Math.sin(j.pitch), Math.cos(j.heading) * cp);
+      const dist = this.zoom ? 16 : 26;
+      targetPos.copy(j.pos).addScaledVector(fwd, -dist).add(new THREE.Vector3(0, 7.5, 0));
+      lookAt.copy(j.pos).addScaledVector(fwd, 60);
     } else {
       const m = this.captainShip!;
       const bridgeW = this.toWorld(m, m.rig.deck.bridgeLocal);
@@ -2200,6 +2207,9 @@ export class Game {
       contracts: this.contracts,
       aimRange: this.aimRange,
       aimTarget: this.aimTarget,
+      gear: this.jet ? this.jet.gear : true,
+      alt: this.jet ? Math.max(0, this.jet.pos.y - waveH(this.jet.pos.x, this.jet.pos.z, this.t)) : 0,
+      jetsLeft: this.parkedJets.length,
     };
     this.cb.onHud(h);
   }
