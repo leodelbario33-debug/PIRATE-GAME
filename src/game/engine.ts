@@ -159,6 +159,8 @@ export class Game {
   private lastZone: "proa" | "popa" | null = null;
   private aimRange = -1;
   private aimTarget = "";
+  private pcMissileT = 4;
+  private missileWarn: { dist: number; angle: number } | null = null;
 
   // cuerda de abordaje (visible en la zona ciega)
   private ropeGeo = new THREE.BufferGeometry();
@@ -1124,11 +1126,42 @@ export class Game {
   private updatePoliceForces(dt: number) {
     const pc = this.policeCarrier;
     if (pc) {
-      pc.heading += Math.sin(this.t * 0.06) * 0.03 * dt;
-      const fwd = new THREE.Vector3(Math.sin(pc.heading), 0, Math.cos(pc.heading));
-      pc.pos.addScaledVector(fwd, 5 * dt);
+      const toP = this.playerPosWorld().sub(pc.pos);
+      toP.y = 0;
+      const distP = toP.length();
+      if (this.wanted >= 2 && distP > 320) {
+        // caza al jugador: gira y avanza hacia él
+        const desH = Math.atan2(toP.x, toP.z);
+        pc.heading += clamp(angDiff(pc.heading, desH), -0.14 * dt, 0.14 * dt);
+        const fwd = new THREE.Vector3(Math.sin(pc.heading), 0, Math.cos(pc.heading));
+        pc.pos.addScaledVector(fwd, 11.5 * dt);
+      } else {
+        pc.heading += Math.sin(this.t * 0.06) * 0.03 * dt;
+        const fwd = new THREE.Vector3(Math.sin(pc.heading), 0, Math.cos(pc.heading));
+        pc.pos.addScaledVector(fwd, 5 * dt);
+      }
       pc.pos.x = clamp(pc.pos.x, -MAP_LIMIT, MAP_LIMIT);
       pc.pos.z = clamp(pc.pos.z, -MAP_LIMIT, MAP_LIMIT);
+      // misiles VLS desde la cubierta
+      this.pcMissileT -= dt;
+      if (this.wanted >= 2 && distP < 850 && this.pcMissileT <= 0) {
+        this.pcMissileT = 4.6;
+        for (const off of [-16, 16]) {
+          const sp = pc.group.localToWorld(new THREE.Vector3(off, 26, -34));
+          const gm = new THREE.Group();
+          const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.24, 2.4, 3, 6), new THREE.MeshStandardMaterial({ color: 0xe8ecf0, roughness: 0.5 }));
+          body.rotation.x = Math.PI / 2;
+          gm.add(body);
+          gm.position.copy(sp);
+          const aim = this.playerPosWorld().add(new THREE.Vector3(0, 3, 0));
+          const vel = aim.sub(sp).normalize().multiplyScalar(195);
+          this.scene.add(gm);
+          this.enemyMissiles.push({ mesh: gm, vel, life: 7 });
+        }
+        this.sfx.jetMissile();
+        this.sfx.alarm();
+        this.pushMsg("¡SALVA DE MISILES DESDE EL PORTAAVIONES POLICIAL! Esquívelos", "danger");
+      }
       pc.group.position.set(pc.pos.x, waveH(pc.pos.x, pc.pos.z, this.t) * 0.55, pc.pos.z);
       pc.group.rotation.y = pc.heading;
       const on = Math.floor(this.t * 4) % 2 === 0;
@@ -1143,10 +1176,11 @@ export class Game {
         if (pc.smokeT <= 0) { pc.smokeT = 0.14; this.smoke(pc.group.position.clone().add(new THREE.Vector3(rand(-15, 15), 22, rand(-40, 40))), 2, true); }
       }
     }
-    const wantJets = this.wanted >= 3 ? (this.mode === "jet" ? 3 : 2) : 0;
+    const nearCV = this.mode === "jet" && this.jet && pc ? this.jet.pos.distanceTo(pc.pos) < 1300 : false;
+    const wantJets = this.wanted >= 4 || nearCV ? 4 : this.wanted >= 2 ? (this.mode === "jet" ? 3 : 2) : 0;
     this.jetLaunchT -= dt;
     if (pc && this.policeJets.length < wantJets && this.jetLaunchT <= 0) {
-      this.jetLaunchT = 7;
+      this.jetLaunchT = 5;
       const jm = buildJetMesh(0xd8dde2, true);
       jm.flame.visible = true;
       this.scene.add(jm.group);
@@ -2150,6 +2184,8 @@ export class Game {
       blips.push({ x: m.rig.group.position.x, z: m.rig.group.position.z, kind: m.hijacked ? "target" : m.kind === "yacht" ? "yacht" : m.kind === "liner" ? "liner" : "merchant", label: m.name });
     }
     for (const pa of this.patrols) blips.push({ x: pa.rig.group.position.x, z: pa.rig.group.position.z, kind: "patrol" });
+    if (this.policeCarrier) blips.push({ x: this.policeCarrier.pos.x, z: this.policeCarrier.pos.z, kind: "patrol", label: "CV POLICÍA" });
+    for (const pj of this.policeJets) blips.push({ x: pj.pos.x, z: pj.pos.z, kind: "patrol" });
     if (this.mode === "captain") blips.push({ x: this.sellPoint.x, z: this.sellPoint.z, kind: "sell" });
     this.radar = {
       px: p.x, pz: p.z,
