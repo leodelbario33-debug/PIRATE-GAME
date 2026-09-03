@@ -1,4 +1,4 @@
-export type CraftId = "viuda" | "fantasma" | "tiburon";
+export type CraftId = "viuda" | "fantasma" | "tiburon" | "kraken";
 
 export interface CraftDef {
   id: CraftId;
@@ -13,7 +13,8 @@ export interface CraftDef {
   weaponDmg: number;
   fireRate: number; // shots per second
   torpedoes: number;
-  missiles: number; // misiles aéreos (arco balístico)
+  missiles: number; // misiles aéreos (arco balístico / aire-aire)
+  jets?: number; // cazas disponibles en cubierta
   submarine: boolean;
   color: string;
   displayKnots: number; // velocidad punta anunciada en nudos
@@ -78,11 +79,31 @@ export const CRAFTS: Record<CraftId, CraftDef> = {
     displayKnots: 32,
     stats: { velocidad: 2, viraje: 3, blindaje: 5, potencia: 5 },
   },
+  kraken: {
+    id: "kraken",
+    name: "EL KRAKEN",
+    cls: "PORTAAVIONES DE ATAQUE",
+    desc: "240 metros de acero con 4 turbinas de gas. Lento en línea recta pero gira como una lancha. Pulsa E para subir a un caza y despega a toda pastilla: tus aviones cazan a 1000 NUDOS.",
+    topSpeed: 13.5,
+    accel: 3.4,
+    turn: 0.7,
+    hull: 420,
+    weaponName: "3 CAZAS + CIWS DE PROA",
+    weaponDmg: 12,
+    fireRate: 1,
+    torpedoes: 0,
+    missiles: 8,
+    jets: 3,
+    submarine: false,
+    color: "#1a222c",
+    displayKnots: 27,
+    stats: { velocidad: 1, viraje: 4, blindaje: 5, potencia: 5 },
+  },
 };
 
 export type MerchantKind = "cargo" | "tanker" | "yacht" | "liner";
 
-export type Mode = "sea" | "board" | "captain";
+export type Mode = "sea" | "board" | "captain" | "jet";
 
 export type MsgKind = "info" | "warn" | "danger" | "good" | "money";
 
@@ -117,6 +138,9 @@ export interface HudData {
   contracts: number;
   aimRange: number; // metros al objetivo bajo la mira (-1 sin objetivo)
   aimTarget: string;
+  gear: boolean; // tren de aterrizaje del caza
+  alt: number; // altitud del caza (m)
+  jetsLeft: number; // cazas restantes en el portaaviones
 }
 
 export interface RadarBlip {
@@ -135,7 +159,7 @@ export interface RadarSnap {
 }
 
 export interface GameOverInfo {
-  cause: "capturado" | "hundido" | "muerto";
+  cause: "capturado" | "hundido" | "muerto" | "estrellado";
   title: string;
   detail: string;
   money: number;

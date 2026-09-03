@@ -4,6 +4,7 @@ import { CRAFTS, MERCHANT_INFO } from "./types";
 import { SFX } from "./audio";
 import {
   buildGoFast, buildSub, buildMerchant, buildPatrol, buildIsland, buildCharacter, makeSea, makeSky, makeClouds,
+  buildCarrier, buildJetMesh, buildPoliceCarrier, CARRIER_DECK,
   waveH, rand, clamp, lerp, angDiff,
 } from "./world";
 import type { PlayerRig, MerchantRig, PatrolRig, CharRig } from "./world";
@@ -27,6 +28,18 @@ interface Patrol {
   fireT: number; burstLeft: number; burstT: number; hp: number;
 }
 interface Torpedo { mesh: THREE.Group; dir: THREE.Vector3; speed: number; life: number; depth: number; }
+interface JetEnt {
+  group: THREE.Group; gearG: THREE.Group; flameG: THREE.Mesh;
+  pos: THREE.Vector3; heading: number; pitch: number; roll: number;
+  speed: number; throttle: number; gear: boolean; hull: number;
+  boostT: number; gunCool: number;
+}
+interface PoliceJetEnt {
+  group: THREE.Group; flameG: THREE.Mesh; pos: THREE.Vector3;
+  heading: number; pitch: number; speed: number; hp: number; fireT: number;
+}
+interface EnemyMissile { mesh: THREE.Group; vel: THREE.Vector3; life: number; }
+interface PoliceCarrierEnt { group: THREE.Group; pos: THREE.Vector3; heading: number; hp: number; maxHp: number; smokeT: number; }
 interface Missile { mesh: THREE.Group; start: THREE.Vector3; end: THREE.Vector3; t: number; dur: number; arc: number; }
 interface Particle {
   s: THREE.Sprite; vel: THREE.Vector3; life: number; maxLife: number;
@@ -72,6 +85,16 @@ export class Game {
   private missileCool = 0;
   private missilesFly: Missile[] = [];
   private missileHits = 0;
+
+  // aviación
+  private jet: JetEnt | null = null;
+  private jetSlot: THREE.Object3D | null = null;
+  private parkedJets: THREE.Object3D[] = [];
+  private policeCarrier: PoliceCarrierEnt | null = null;
+  private policeJets: PoliceJetEnt[] = [];
+  private enemyMissiles: EnemyMissile[] = [];
+  private jetLaunchT = 0;
+  private sonicT = 0;
   private fireCool = 0;
   private mag = 30;
   private reloading = false;
@@ -208,8 +231,16 @@ export class Game {
     this.pTex = new THREE.CanvasTexture(cv);
 
     // jugador
-    this.craft = def.submarine ? buildSub(def) : buildGoFast(def);
+    this.craft = def.submarine ? buildSub(def) : def.id === "kraken" ? buildCarrier(def) : buildGoFast(def);
     this.scene.add(this.craft.group);
+    if (def.id === "kraken") {
+      for (const z of [70, 30, -10]) {
+        const j = buildJetMesh(0x2b333d);
+        j.group.position.set(-10, CARRIER_DECK.deckY + 1.4, z);
+        this.craft.group.add(j.group);
+        this.parkedJets.push(j.group);
+      }
+    }
 
     // beacon del punto de venta
     const bg = new THREE.CylinderGeometry(3, 7, 260, 10, 1, true);
@@ -265,6 +296,14 @@ export class Game {
 
     this.spawnPatrol(rand(0, 6), 800);
     this.spawnPatrol(rand(0, 6), 950);
+
+    // portaaviones de la policía marítima
+    const pcg = buildPoliceCarrier();
+    pcg.position.set(-2300, 0, 1900);
+    this.scene.add(pcg);
+    this.policeCarrier = {
+      group: pcg, pos: new THREE.Vector3(-2300, 0, 1900), heading: 0.6, hp: 320, maxHp: 320, smokeT: 0,
+    };
   }
 
   private spawnMerchant(kind: MerchantKind, name: string, dist: number, ang: number) {
@@ -547,12 +586,15 @@ export class Game {
 
     if (this.mode === "sea") this.updateSea(dt);
     else if (this.mode === "board") this.updateBoard(dt);
-    else this.updateCaptain(dt);
+    else if (this.mode === "captain") this.updateCaptain(dt);
+    else this.updateJet(dt);
 
     this.updateMerchants(dt);
     this.updatePatrols(dt);
     this.updateTorpedoes(dt);
     this.updateMissiles(dt);
+    this.updatePoliceForces(dt);
+    this.updateEnemyMissiles(dt);
     this.updateWanted(dt);
     this.updateFx(dt);
     this.updateCamera(dt);
@@ -561,9 +603,16 @@ export class Game {
     // sonido motor + sirena
     const nearPatrol = this.patrols.some((p) => p.rig.group.position.distanceTo(this.craft.group.position) < 420 && this.wanted > 0);
     this.sfx.siren(nearPatrol && this.wanted > 0);
-    if (this.mode === "sea") this.sfx.engine(Math.abs(this.throttle), this.craftId === "tiburon" ? 0.62 : 1, true);
+    if (this.mode === "sea") this.sfx.engine(Math.abs(this.throttle), this.craftId === "tiburon" ? 0.62 : this.craftId === "kraken" ? 0.38 : 1, true);
     else if (this.mode === "captain") this.sfx.engine(Math.abs(this.throttle) * 0.6, 0.45, true);
     else this.sfx.engine(0, 1, false);
+    // reactor del caza
+    if (this.mode === "jet" && this.jet) {
+      const burner = (this.keys.has("ShiftLeft") || this.keys.has("ShiftRight")) && this.jet.throttle > 0.85 && this.jet.speed > 60;
+      this.sfx.jet(true, this.jet.throttle, burner);
+    } else {
+      this.sfx.jet(false);
+    }
 
     // sonar del submarino
     if (this.craftId === "tiburon" && this.submerged) {
@@ -660,9 +709,9 @@ export class Game {
       if (this.torps > 0 && this.torpCool <= 0) this.launchTorpedo();
       else if (this.torps <= 0) { this.pushMsg("Sin torpedos. Vende mercancía para reabastecer.", "warn"); this.sfx.empty(); }
     }
-    // misiles aéreos (La Viuda)
+    // misiles aéreos (La Viuda; el portaaviones los usa solo desde el caza)
     this.missileCool -= dt;
-    if (this.pressed.has("Space") && def.missiles > 0) {
+    if (this.pressed.has("Space") && def.missiles > 0 && this.craftId !== "kraken") {
       if (this.missiles > 0 && this.missileCool <= 0) this.launchMissile();
       else if (this.missiles <= 0) { this.pushMsg("Rampa de misiles vacía. Reabastece vendiendo mercancía.", "warn"); this.sfx.empty(); }
     }
@@ -728,6 +777,20 @@ export class Game {
         this.pushMsg("Garfio enganchado a la barandilla — la cuerda está tensa", "good");
       }
       this.lastZone = this.blindSpot;
+    }
+
+    // portaaviones: subir al caza con E
+    if (this.craftId === "kraken" && !this.blindSpot) {
+      if (this.parkedJets.length > 0) {
+        if (Math.abs(this.speed) < 12) {
+          this.canInteract = `SUBIR AL CAZA Y DESPEGAR — PULSA E (${this.parkedJets.length} en cubierta)`;
+          if (this.pressed.has("KeyE")) this.takeOff();
+        } else {
+          this.canInteract = "REDUCE VELOCIDAD PARA LANZAR LOS CAZAS";
+        }
+      } else {
+        this.canInteract = "SIN CAZAS DISPONIBLES";
+      }
     }
 
     // límite del mapa
@@ -913,6 +976,284 @@ export class Game {
     this.torpedoes = this.torpedoes.filter((t) => t.life > 0 && t.mesh.parent !== null);
   }
 
+  // ------------------------------------------------------------- aviación
+  private takeOff() {
+    const slot = this.parkedJets.pop()!;
+    slot.visible = false;
+    this.jetSlot = slot;
+    const jm = buildJetMesh(0x2b333d);
+    this.scene.add(jm.group);
+    const wp = this.craft.group.localToWorld(new THREE.Vector3(-8, CARRIER_DECK.deckY + 1.4, 85));
+    this.jet = { group: jm.group, gearG: jm.gear, flameG: jm.flame, pos: wp.clone(), heading: this.heading, pitch: 0, roll: 0, speed: 0, throttle: 1, gear: true, hull: 120, boostT: 2.4, gunCool: 0 };
+    this.missiles = CRAFTS.kraken.missiles;
+    this.mode = "jet";
+    this.lookPitch = -0.05;
+    this.camPos.copy(wp).add(new THREE.Vector3(0, 8, -30));
+    this.sfx.takeoff();
+    this.pushMsg("¡DESPEGUE AUTORIZADO! W/S potencia · SHIFT postquemador · G ruedas · ESPACIO misil", "good");
+  }
+
+  private landJet() {
+    if (!this.jet) return;
+    this.scene.remove(this.jet.group);
+    this.jet = null;
+    if (this.jetSlot) { this.jetSlot.visible = true; this.parkedJets.push(this.jetSlot); this.jetSlot = null; }
+    this.mode = "sea";
+    this.missiles = CRAFTS.kraken.missiles;
+    this.sfx.gearSfx();
+    this.sfx.jingle();
+    this.pushMsg("ATERRIZAJE COMPLETADO — caza rearmado y listo en cubierta", "good");
+  }
+
+  private jetDead(title: string, detail: string) {
+    if (this.jet) { this.explosion(this.jet.pos.clone(), 2); this.scene.remove(this.jet.group); this.jet = null; }
+    this.gameOver("estrellado", title, detail);
+  }
+
+  private playerPosWorld(): THREE.Vector3 {
+    if (this.mode === "jet" && this.jet) return this.jet.pos.clone();
+    if (this.mode === "captain" && this.captainShip) return this.captainShip.rig.group.position.clone();
+    if (this.mode === "board" && this.boardShip) return this.boardShip.rig.group.position.clone();
+    return this.craft.group.position.clone();
+  }
+
+  private updateJet(dt: number) {
+    const j = this.jet!;
+    const k = this.keys;
+    if (j.boostT > 0) { j.boostT -= dt; j.throttle = 1; }
+    else {
+      const tIn = (k.has("KeyW") || k.has("ArrowUp") ? 1 : 0) - (k.has("KeyS") || k.has("ArrowDown") ? 1 : 0);
+      j.throttle = clamp(j.throttle + tIn * dt * 0.8, 0.06, 1);
+    }
+    const burner = (k.has("ShiftLeft") || k.has("ShiftRight")) && j.throttle > 0.85;
+    const maxS = burner ? 514 : 440; // hasta ~1000 nudos
+    j.speed = lerp(j.speed, j.throttle * maxS, dt * (j.speed < 70 ? 1.9 : burner ? 1.5 : 0.9));
+    const yawK = j.speed > 70 ? 1.6 : 0.7;
+    j.heading += clamp(angDiff(j.heading, this.lookYaw), -yawK * dt, yawK * dt);
+    if (j.speed > 62) j.pitch = lerp(j.pitch, clamp(-this.lookPitch, -1.05, 1.05) * 0.92, dt * 2.6);
+    else j.pitch = lerp(j.pitch, 0, dt * 4);
+    const rollIn = (k.has("KeyA") || k.has("ArrowLeft") ? 1 : 0) - (k.has("KeyD") || k.has("ArrowRight") ? 1 : 0);
+    j.roll = lerp(j.roll, rollIn * 0.85, dt * 3.2);
+    j.heading += rollIn * 0.55 * dt * clamp(j.speed / 120, 0.2, 1);
+    const cp = Math.cos(j.pitch);
+    const fwd = new THREE.Vector3(Math.sin(j.heading) * cp, Math.sin(j.pitch), Math.cos(j.heading) * cp);
+    j.pos.addScaledVector(fwd, j.speed * dt);
+    // tren de aterrizaje
+    if (this.pressed.has("KeyG")) {
+      j.gear = !j.gear;
+      this.sfx.gearSfx();
+      this.pushMsg(j.gear ? "Tren de aterrizaje ABAJO" : "Tren ARRIBA", "info");
+    }
+    j.gearG.visible = j.gear;
+    j.flameG.visible = j.throttle > 0.78;
+    j.flameG.scale.setScalar(burner ? 1.9 : 1);
+    // suelo: cubierta del portaaviones o mar
+    const local = this.craft.group.worldToLocal(j.pos.clone());
+    const overDeck = Math.abs(local.x) < CARRIER_DECK.wid / 2 - 2 && Math.abs(local.z) < CARRIER_DECK.len / 2 - 4;
+    const deckY = this.craft.group.position.y + CARRIER_DECK.deckY + 1.3;
+    const seaFloor = waveH(j.pos.x, j.pos.z, this.t) + 1.1;
+    const floor = overDeck ? deckY : seaFloor;
+    if (j.pos.y <= floor + 0.05) {
+      if (overDeck) {
+        if (j.gear && j.speed < 130) { j.pos.y = floor; this.landJet(); return; }
+        j.pos.y = floor;
+        if (j.speed < 62) j.pitch = 0;
+      } else {
+        this.jetDead("CAZA PERDIDO EN EL MAR", "Tocaste el agua a " + Math.round(j.speed * 1.94) + " nudos. Los cazas no flotan.");
+        return;
+      }
+    }
+    if (j.pos.y < floor) j.pos.y = floor;
+    if (j.pos.y > 1700) { j.pos.y = 1700; j.pitch = Math.min(j.pitch, 0); }
+    // barrera del sonido
+    this.sonicT -= dt;
+    if (j.speed > 340 && this.sonicT <= 0) {
+      this.sonicT = 1.4;
+      this.sfx.boom();
+      this.shake = Math.min(1.2, this.shake + 0.3);
+      this.spawnP(j.pos.clone(), new THREE.Vector3(), 0.5, 3, 26, 0xe8f6ff, 0.5, 0, true);
+    }
+    j.group.position.copy(j.pos);
+    j.group.rotation.y = j.heading;
+    j.group.rotation.x = -j.pitch;
+    j.group.rotation.z = j.roll;
+    // cañón del caza
+    j.gunCool -= dt;
+    if (this.firing && j.gunCool <= 0) {
+      j.gunCool = 1 / 13;
+      const muzzle = j.pos.clone().addScaledVector(fwd, 7);
+      this.muzzleFlash(muzzle);
+      this.sfx.shot(false);
+      const dir = this.camDir();
+      const hit = this.raycastWorld(muzzle, dir, 1200);
+      const end = hit ? hit.point : muzzle.clone().addScaledVector(dir, 900);
+      this.tracer(muzzle, end, 0xffe08a);
+      if (hit) this.applyHit(hit, 9, "craft");
+      for (const pj of this.policeJets) {
+        const toJ = pj.pos.clone().sub(muzzle);
+        const t2 = toJ.dot(dir);
+        if (t2 > 0 && t2 < 1200 && toJ.addScaledVector(dir, -t2).length() < 6) { this.hitPoliceJet(pj, 30); break; }
+      }
+      if (this.policeCarrier) {
+        const pc = this.policeCarrier;
+        const toC = pc.pos.clone().setY(pc.group.position.y + 12).sub(muzzle);
+        const t3 = toC.dot(dir);
+        if (t3 > 0 && toC.addScaledVector(dir, -t3).length() < 55) this.damagePoliceCarrier(4);
+      }
+    }
+    // misiles del caza
+    this.missileCool -= dt;
+    if (this.pressed.has("Space")) {
+      if (this.missiles > 0 && this.missileCool <= 0) this.launchMissile();
+      else if (this.missiles <= 0) { this.pushMsg("Sin misiles — aterriza para rearmar", "warn"); this.sfx.empty(); }
+    }
+  }
+
+  // ------------------------------------------------------------- fuerzas policiales aéreas
+  private updatePoliceForces(dt: number) {
+    const pc = this.policeCarrier;
+    if (pc) {
+      pc.heading += Math.sin(this.t * 0.06) * 0.03 * dt;
+      const fwd = new THREE.Vector3(Math.sin(pc.heading), 0, Math.cos(pc.heading));
+      pc.pos.addScaledVector(fwd, 5 * dt);
+      pc.pos.x = clamp(pc.pos.x, -MAP_LIMIT, MAP_LIMIT);
+      pc.pos.z = clamp(pc.pos.z, -MAP_LIMIT, MAP_LIMIT);
+      pc.group.position.set(pc.pos.x, waveH(pc.pos.x, pc.pos.z, this.t) * 0.55, pc.pos.z);
+      pc.group.rotation.y = pc.heading;
+      const on = Math.floor(this.t * 4) % 2 === 0;
+      const la = pc.group.userData.lightA as THREE.PointLight;
+      const lb = pc.group.userData.lightB as THREE.PointLight;
+      if (la && lb) {
+        if (this.wanted > 0) { la.intensity = on ? 400 : 0; lb.intensity = on ? 0 : 400; }
+        else { la.intensity = 0; lb.intensity = 0; }
+      }
+      if (pc.hp < pc.maxHp * 0.5) {
+        pc.smokeT -= dt;
+        if (pc.smokeT <= 0) { pc.smokeT = 0.14; this.smoke(pc.group.position.clone().add(new THREE.Vector3(rand(-15, 15), 22, rand(-40, 40))), 2, true); }
+      }
+    }
+    const wantJets = this.wanted >= 3 ? (this.mode === "jet" ? 3 : 2) : 0;
+    this.jetLaunchT -= dt;
+    if (pc && this.policeJets.length < wantJets && this.jetLaunchT <= 0) {
+      this.jetLaunchT = 7;
+      const jm = buildJetMesh(0xd8dde2, true);
+      jm.flame.visible = true;
+      this.scene.add(jm.group);
+      const start = pc.pos.clone().add(new THREE.Vector3(rand(-10, 10), 34, rand(-10, 10)));
+      const toP = this.playerPosWorld().sub(start);
+      this.policeJets.push({ group: jm.group, flameG: jm.flame, pos: start, heading: Math.atan2(toP.x, toP.z), pitch: 0, speed: 130, hp: 60, fireT: 2 });
+      this.pushMsg("¡CAZAS DE LA POLICÍA DESPEGAN DEL PORTAAVIONES!", "danger");
+      this.sfx.alarm();
+    }
+    const target = this.playerPosWorld();
+    for (const pj of this.policeJets) {
+      const toT = target.clone().sub(pj.pos);
+      const dist = toT.length();
+      const desiredYaw = Math.atan2(toT.x, toT.z);
+      pj.heading += clamp(angDiff(pj.heading, desiredYaw), -1.7 * dt, 1.7 * dt);
+      const desiredPitch = Math.atan2(toT.y, Math.hypot(toT.x, toT.z));
+      pj.pitch = lerp(pj.pitch, clamp(desiredPitch, -0.55, 0.55), dt * 1.6);
+      const disengage = this.wanted < 3;
+      pj.speed = lerp(pj.speed, disengage ? 320 : dist > 260 ? 300 : 215, dt * 0.8);
+      const cp2 = Math.cos(pj.pitch);
+      const fwd2 = new THREE.Vector3(Math.sin(pj.heading) * cp2, Math.sin(pj.pitch), Math.cos(pj.heading) * cp2);
+      if (disengage) fwd2.y = Math.max(fwd2.y, 0.25);
+      pj.pos.addScaledVector(fwd2, pj.speed * dt);
+      const minAlt = waveH(pj.pos.x, pj.pos.z, this.t) + 14;
+      if (pj.pos.y < minAlt) pj.pos.y = minAlt;
+      if (pj.pos.y > 1300) pj.pos.y = 1300;
+      pj.group.position.copy(pj.pos);
+      pj.group.rotation.y = pj.heading;
+      pj.group.rotation.x = -pj.pitch;
+      pj.flameG.scale.setScalar(0.85 + Math.sin(this.t * 40 + pj.pos.x) * 0.15);
+      if (!disengage && dist < 950) {
+        pj.fireT -= dt;
+        if (pj.fireT <= 0) {
+          pj.fireT = rand(3.2, 4.8);
+          const gm = new THREE.Group();
+          const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.22, 2.2, 3, 6), new THREE.MeshStandardMaterial({ color: 0xd8dde2, roughness: 0.5 }));
+          body.rotation.x = Math.PI / 2;
+          gm.add(body);
+          gm.position.copy(pj.pos).addScaledVector(fwd2, 5);
+          const aim = this.playerPosWorld().add(new THREE.Vector3(0, this.mode === "jet" ? 0 : 2, 0));
+          const vel = aim.sub(gm.position).normalize().multiplyScalar(205);
+          this.scene.add(gm);
+          this.enemyMissiles.push({ mesh: gm, vel, life: 6 });
+          this.sfx.jetMissile();
+          if (dist < 500) this.pushMsg("¡MISIL ENEMIGO EN CAMINO!", "danger");
+        }
+      }
+    }
+    this.policeJets = this.policeJets.filter((pj) => {
+      if (this.wanted < 3 && pj.pos.distanceTo(target) > 1500) { this.scene.remove(pj.group); return false; }
+      return true;
+    });
+  }
+
+  private hitPoliceJet(pj: PoliceJetEnt, dmg: number) {
+    pj.hp -= dmg;
+    this.hitT = performance.now();
+    this.sfx.hit();
+    this.burst(pj.pos.clone(), 6, 0xffd070, 8, 0.35, 0.6, 5);
+    if (pj.hp <= 0) {
+      this.explosion(pj.pos.clone(), 1.4);
+      this.scene.remove(pj.group);
+      this.policeJets = this.policeJets.filter((x) => x !== pj);
+      this.kills++;
+      this.money += 15000;
+      this.pushMsg("CAZA POLICIAL DERRIBADO +$15.000", "good");
+      this.sfx.sell();
+    }
+  }
+
+  private damagePoliceCarrier(d: number) {
+    const pc = this.policeCarrier;
+    if (!pc) return;
+    pc.hp -= d;
+    this.hitT = performance.now();
+    this.raiseWanted(2);
+    if (pc.hp <= 0) {
+      const p = pc.group.position.clone().add(new THREE.Vector3(0, 12, 0));
+      this.explosion(p, 2.6);
+      this.explosion(p.clone().add(new THREE.Vector3(30, 6, -40)), 2);
+      this.explosion(p.clone().add(new THREE.Vector3(-25, 8, 50)), 2);
+      for (const pj of this.policeJets) this.scene.remove(pj.group);
+      this.policeJets = [];
+      this.scene.remove(pc.group);
+      this.policeCarrier = null;
+      this.wanted = Math.max(0, this.wanted - 2);
+      this.money += 60000;
+      this.pushMsg("¡PORTAAVIONES POLICIAL HUNDIDO! +$60.000 — la caza amaina", "money");
+      this.sfx.sell();
+    }
+  }
+
+  private updateEnemyMissiles(dt: number) {
+    const target = this.playerPosWorld().add(new THREE.Vector3(0, this.mode === "jet" ? 0 : 2, 0));
+    for (const em of this.enemyMissiles) {
+      em.life -= dt;
+      const toT = target.clone().sub(em.mesh.position);
+      const d = toT.length();
+      const cur = em.vel.clone().normalize().lerp(toT.normalize(), clamp(dt * 2.8, 0, 1)).normalize();
+      em.vel = cur.multiplyScalar(215);
+      em.mesh.position.addScaledVector(em.vel, dt);
+      em.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), cur);
+      if (Math.random() < 0.7) this.spawnP(em.mesh.position.clone(), new THREE.Vector3(rand(-0.5, 0.5), rand(-0.2, 0.6), rand(-0.5, 0.5)), 0.5, 0.8, 2, 0xcfe8ee, 0.4, -0.5, true);
+      if (d < 15) {
+        this.explosion(em.mesh.position.clone(), 1.1);
+        this.damagePlayer(this.mode === "jet" ? 26 : 18);
+        em.life = 0;
+      } else if (em.mesh.position.y < waveH(em.mesh.position.x, em.mesh.position.z, this.t) + 0.4) {
+        this.splash(em.mesh.position.clone(), 1);
+        em.life = 0;
+      }
+    }
+    this.enemyMissiles = this.enemyMissiles.filter((em) => {
+      if (em.life <= 0) { this.scene.remove(em.mesh); return false; }
+      return true;
+    });
+  }
+
   private toLocal(m: Merchant, world: THREE.Vector3): THREE.Vector3 {
     const mp = m.rig.group.position;
     const dx = world.x - mp.x, dz = world.z - mp.z;
@@ -964,8 +1305,12 @@ export class Game {
       ? hit.point.clone()
       : from.clone().addScaledVector(dir, 850).setY(waveH(from.x + dir.x * 850, from.z + dir.z * 850, this.t));
     const start = new THREE.Vector3();
-    this.craft.bowAnchor.getWorldPosition(start);
-    start.y = Math.max(start.y, waveH(start.x, start.z, this.t)) + 1.5;
+    if (this.mode === "jet" && this.jet) {
+      start.copy(this.jet.pos).addScaledVector(this.camDir(), 6);
+    } else {
+      this.craft.bowAnchor.getWorldPosition(start);
+      start.y = Math.max(start.y, waveH(start.x, start.z, this.t)) + 1.5;
+    }
     const dist = start.distanceTo(end);
     // cohete BR-8
     const g = new THREE.Group();

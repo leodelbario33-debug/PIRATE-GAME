@@ -648,3 +648,158 @@ export function buildIsland(r: number, palms: number, hasCove: boolean) {
   }
   return g;
 }
+
+// ----------------------------- portaaviones -----------------------------
+export const CARRIER_DECK = { len: 240, wid: 46, deckY: 21 };
+
+function carrierBase(len: number, wid: number, deckY: number, police: boolean) {
+  const g = new THREE.Group();
+  const hullMat = police ? M.patrolWhite : M.hullDark;
+  const deckMat = police ? M.deckSteel : M.black;
+  // casco
+  g.add(box(wid - 8, 6, len * 0.94, police ? M.hullBlue : M.hullRed, 0, -1.6, 0));
+  g.add(box(wid - 4, deckY - 4, len * 0.98, hullMat, 0, (deckY - 4) / 2 + 1, 0));
+  // proa
+  const bow = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 1, len * 0.1, 4, 1), hullMat);
+  bow.rotation.x = Math.PI / 2; bow.rotation.y = Math.PI / 4;
+  bow.scale.set((wid - 4) / 2, 1, 0.75);
+  bow.position.set(0, deckY / 2, len / 2 + len * 0.04);
+  g.add(bow);
+  // cubierta de vuelo
+  g.add(box(wid, 1.4, len, deckMat, 0, deckY, 0));
+  // franjas de pista
+  const stripeMat = new THREE.MeshStandardMaterial({ color: police ? 0x2a6ad0 : 0xd8d2c0, roughness: 0.9, flatShading: true });
+  for (let i = 0; i < 12; i++) {
+    g.add(box(0.8, 0.12, 6, stripeMat, 0, deckY + 0.78, -len * 0.42 + i * (len * 0.84) / 11));
+  }
+  g.add(box(0.5, 0.12, len * 0.9, stripeMat, -wid * 0.28, deckY + 0.78, 0));
+  g.add(box(0.5, 0.12, len * 0.9, stripeMat, wid * 0.28, deckY + 0.78, 0));
+  // isla (torre) a estribor
+  const islandMat = police ? M.white : M.superWhite;
+  g.add(box(9, 15, 24, islandMat, wid / 2 - 7, deckY + 8.2, -len * 0.12));
+  g.add(box(9.2, 1.1, 24.2, police ? M.windowBlue : M.windowGlow, wid / 2 - 7, deckY + 14.4, -len * 0.12));
+  g.add(box(0.4, 9, 0.4, M.steel, wid / 2 - 7, deckY + 20, -len * 0.12));
+  const radarDome = new THREE.Mesh(new THREE.SphereGeometry(2.2, 8, 6), M.white);
+  radarDome.position.set(wid / 2 - 7, deckY + 25, -len * 0.12);
+  g.add(radarDome);
+  return { g, len, wid, deckY };
+}
+
+export function buildCarrier(def: CraftDef): PlayerRig {
+  const { g, len, wid, deckY } = carrierBase(CARRIER_DECK.len, CARRIER_DECK.wid, CARRIER_DECK.deckY, false);
+  void def;
+  // 4 turbinas: chimeneas dobles con escapes
+  const enginePuffs: THREE.Object3D[] = [];
+  for (let i = 0; i < 4; i++) {
+    const sx = i % 2 === 0 ? -1 : 1;
+    const sz = i < 2 ? -len * 0.28 : -len * 0.36;
+    const stack = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 2, 7, 8), M.dark);
+    stack.position.set(sx * 8, deckY + 4, sz);
+    stack.rotation.z = sx * 0.16;
+    g.add(stack);
+    const puff = new THREE.Object3D();
+    puff.position.set(sx * 9.2, deckY + 7.8, sz);
+    g.add(puff);
+    enginePuffs.push(puff);
+  }
+  // CIWS de proa (torreta)
+  const turret = new THREE.Group();
+  turret.position.set(0, deckY + 0.8, len * 0.38);
+  turret.add(box(2.2, 2.2, 2.6, M.white, 0, 1.2, 0));
+  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 3.4, 8), M.steel);
+  barrel.rotation.x = Math.PI / 2;
+  barrel.position.set(0, 2.4, 2);
+  turret.add(barrel);
+  const muzzle = new THREE.Object3D();
+  muzzle.position.set(0, 2.4, 3.9);
+  turret.add(muzzle);
+  g.add(turret);
+  const bowAnchor = new THREE.Object3D(); bowAnchor.position.set(0, deckY, len / 2 + 2); g.add(bowAnchor);
+  const sternAnchor = new THREE.Object3D(); sternAnchor.position.set(0, 4, -len / 2 - 2); g.add(sternAnchor);
+  return { group: g, turret, muzzle, enginePuffs, bowAnchor, sternAnchor };
+}
+
+export function buildPoliceCarrier(): THREE.Group {
+  const { g, len, deckY } = carrierBase(200, 42, 19, true);
+  // rótulo lateral azul
+  g.add(box(0.6, 3, 60, new THREE.MeshStandardMaterial({ color: 0x1a4fc0, roughness: 0.6, flatShading: true }), 20.6, 10, 10));
+  g.add(box(0.6, 3, 60, new THREE.MeshStandardMaterial({ color: 0x1a4fc0, roughness: 0.6, flatShading: true }), -20.6, 10, 10));
+  // cazas aparcados (estáticos)
+  for (const z of [40, -10, -60]) {
+    const j = buildJetMesh(0xd8dde2, true);
+    j.group.position.set(-8, deckY + 1.4, z);
+    g.add(j.group);
+  }
+  // luces de sirena
+  const la = new THREE.PointLight(0xff2222, 0, 140);
+  la.position.set(12, deckY + 18, -24);
+  g.add(la);
+  const lb = new THREE.PointLight(0x2266ff, 0, 140);
+  lb.position.set(16, deckY + 18, -24);
+  g.add(lb);
+  g.userData.lightA = la;
+  g.userData.lightB = lb;
+  void len;
+  return g;
+}
+
+export function buildJetMesh(color: number, police = false): { group: THREE.Group; gear: THREE.Group; flame: THREE.Mesh } {
+  const g = new THREE.Group();
+  const body = new THREE.MeshStandardMaterial({ color: police ? 0xe8ecf0 : color, roughness: 0.45, metalness: 0.5, flatShading: true });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x11151a, roughness: 0.5, metalness: 0.5, flatShading: true });
+  // fuselaje (proa +Z)
+  const fuse = new THREE.Mesh(new THREE.CapsuleGeometry(0.85, 9, 4, 8), body);
+  fuse.rotation.x = Math.PI / 2;
+  fuse.position.y = 0.4;
+  g.add(fuse);
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(0.85, 2.6, 8), body);
+  nose.rotation.x = Math.PI / 2;
+  nose.position.set(0, 0.4, 6.6);
+  g.add(nose);
+  // cabina
+  const canopy = new THREE.Mesh(new THREE.SphereGeometry(0.72, 8, 6), new THREE.MeshStandardMaterial({ color: 0x0d1b26, emissive: police ? 0x2a6ad0 : 0x3a2a10, emissiveIntensity: 0.7, roughness: 0.2 }));
+  canopy.scale.set(0.8, 0.6, 1.7);
+  canopy.position.set(0, 1.05, 2.4);
+  g.add(canopy);
+  // alas en delta
+  const wing = box(11.5, 0.22, 3.6, body, 0, 0.25, -1.2);
+  g.add(wing);
+  // estabilizadores
+  g.add(box(5.4, 0.18, 2, body, 0, 0.4, -5));
+  // dobles derivas
+  for (const s of [-1, 1]) {
+    const fin = box(0.2, 2.4, 2.6, body, s * 1.1, 1.5, -5);
+    fin.rotation.z = s * -0.28;
+    g.add(fin);
+  }
+  // tomas de aire
+  g.add(box(0.7, 0.9, 3, dark, 1.05, 0.1, 0.6));
+  g.add(box(0.7, 0.9, 3, dark, -1.05, 0.1, 0.6));
+  // franja
+  g.add(box(1.8, 0.1, 4, police ? new THREE.MeshStandardMaterial({ color: 0x1a4fc0, roughness: 0.6, flatShading: true }) : M.orange, 0, 1.28, -0.6));
+  // tren de aterrizaje (retráctil)
+  const gear = new THREE.Group();
+  const wheelMat = M.black;
+  const mkWheel = (x: number, z: number) => {
+    const strut = box(0.14, 1, 0.14, M.steel, x, -0.5, z);
+    gear.add(strut);
+    const w = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.24, 8), wheelMat);
+    w.rotation.z = Math.PI / 2;
+    w.position.set(x, -1, z);
+    gear.add(w);
+  };
+  mkWheel(0, 4.4);
+  mkWheel(1.1, -1.8);
+  mkWheel(-1.1, -1.8);
+  g.add(gear);
+  // postquemador
+  const flame = new THREE.Mesh(
+    new THREE.ConeGeometry(0.6, 4.5, 8),
+    new THREE.MeshBasicMaterial({ color: 0xffa030, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false })
+  );
+  flame.rotation.x = -Math.PI / 2;
+  flame.position.set(0, 0.4, -8);
+  flame.visible = false;
+  g.add(flame);
+  return { group: g, gear, flame };
+}
