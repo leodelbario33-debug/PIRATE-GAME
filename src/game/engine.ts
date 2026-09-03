@@ -2119,8 +2119,8 @@ export class Game {
         targetPos.copy(p).addScaledVector(back, -dist).add(new THREE.Vector3(0, height, 0));
         lookAt.copy(p).add(new THREE.Vector3(0, CARRIER_DECK.deckY * 0.55, 0)).addScaledVector(back, 30);
       } else {
-        const dist = this.zoom ? 8 : this.craftId === "tiburon" ? 17 : 13;
-        const height = this.submerged ? 6.4 : this.zoom ? 3 : 5.2;
+        const dist = this.zoom ? 8 : this.craftId === "tiburon" ? 17 : this.craftId === "viuda" ? 24 : 13;
+        const height = this.submerged ? 6.4 : this.zoom ? 3 : this.craftId === "viuda" ? 8 : 5.2;
         targetPos.copy(p).addScaledVector(back, -dist).add(new THREE.Vector3(0, height, 0));
         lookAt.copy(p).add(new THREE.Vector3(0, this.submerged ? 2.6 : 2.2, 0)).addScaledVector(back, 8);
       }

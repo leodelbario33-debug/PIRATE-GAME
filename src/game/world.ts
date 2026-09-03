@@ -176,42 +176,76 @@ export interface PlayerRig {
 
 export function buildGoFast(def: CraftDef): PlayerRig {
   const g = new THREE.Group();
+  const big = def.id === "viuda";
+  const hw = big ? 2.7 : 1.7; // semimanga
+  const hh = big ? 0.85 : 0.55; // semipuntal
+  const hl = big ? 10 : 6.5; // semieslora
+  const bowLen = big ? 9.5 : 4;
   // casco: proa hacia +Z
-  const hull = new THREE.Mesh(new THREE.BoxGeometry(3.4, 1.1, 13), M.hullDark);
-  hull.position.y = 0.55;
+  const hull = new THREE.Mesh(new THREE.BoxGeometry(hw * 2, hh * 2, hl * 2), M.hullDark);
+  hull.position.y = hh;
   g.add(hull);
-  const bow = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 1.7, 4, 4, 1), M.hullDark);
+  // proa larga y afilada
+  const bow = new THREE.Mesh(new THREE.CylinderGeometry(0.01, hw, bowLen, 4, 1), M.hullDark);
   bow.rotation.x = Math.PI / 2;
   bow.rotation.y = Math.PI / 4;
   bow.scale.set(1, 1, 0.55);
-  bow.position.set(0, 0.5, 8.4);
+  bow.position.set(0, hh * 0.9, hl + bowLen / 2 - 0.3);
   g.add(bow);
   // franjas
-  g.add(box(3.5, 0.28, 13.05, M.orange, 0, 0.9, 0));
+  g.add(box(hw * 2 + 0.1, 0.28, hl * 2 + 0.05, M.orange, 0, hh * 2 - 0.2, 0));
+  if (big) g.add(box(hw * 2 + 0.12, 0.16, hl * 2 + 0.06, M.steel, 0, 0.22, 0));
   // consola central
-  g.add(box(1.8, 1.1, 1.6, M.dark, 0, 1.6, 1.2));
-  g.add(box(1.6, 0.5, 0.15, M.windowBlue, 0, 2.05, 1.95));
+  g.add(box(hw * 1.06, 1.1, 1.6, M.dark, 0, hh * 2 + 0.5, hl * 0.185));
+  g.add(box(hw * 0.94, 0.5, 0.15, M.windowBlue, 0, hh * 2 + 0.95, hl * 0.3));
   // asientos y detalles
-  g.add(box(2.2, 0.5, 2.4, M.black, 0, 1.35, -1.2));
-  g.add(box(0.5, 0.8, 0.5, M.steel, 1.2, 1.5, 3.4));
+  g.add(box(hw * 1.29, 0.5, 2.4, M.black, 0, hh * 2 + 0.25, -hl * 0.185));
+  g.add(box(0.5, 0.8, 0.5, M.steel, hw * 0.7, hh * 2 + 0.4, hl * 0.52));
+  if (big) {
+    // hardtop con radar
+    g.add(box(3.6, 0.32, 3.4, M.deckSteel, 0, hh * 2 + 1.6, hl * 0.185));
+    g.add(box(0.22, 1.3, 0.22, M.steel, 0, hh * 2 + 2.4, hl * 0.185 - 1.1));
+    const dome = new THREE.Mesh(new THREE.SphereGeometry(0.45, 8, 6), M.white);
+    dome.position.set(0, hh * 2 + 3.15, hl * 0.185 - 1.1);
+    g.add(dome);
+    // bidones de combustible
+    for (const s of [-1, 1]) {
+      const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 1, 8), M.orange);
+      drum.position.set(s * (hw - 0.6), hh * 2 + 0.5, -hl * 0.45);
+      g.add(drum);
+    }
+    // nervadura naranja sobre la proa larga
+    g.add(box(0.5, 0.36, bowLen * 0.88, M.orange, 0, hh * 2 - 0.62, hl + bowLen * 0.42));
+  }
   // 4 motores fueraborda gigantes
   const enginePuffs: THREE.Object3D[] = [];
-  for (let i = 0; i < 4; i++) {
+  const nEng = big ? 8 : 4;
+  for (let i = 0; i < nEng; i++) {
     const e = new THREE.Group();
-    e.add(box(0.75, 1.15, 1.5, M.black, 0, 0.55, 0));
-    e.add(box(0.65, 0.5, 1.2, M.dark, 0, 1.25, -0.2));
-    e.add(box(0.3, 0.9, 0.3, M.steel, 0, -0.3, -0.55));
-    const px = -1.26 + i * 0.84;
-    e.position.set(px, 0.4, -6.9);
+    const ew = big ? 0.95 : 0.75;
+    const eh = big ? 1.7 : 1.15;
+    const el = big ? 2.2 : 1.5;
+    e.add(box(ew, eh, el, M.black, 0, eh / 2, 0));
+    e.add(box(ew * 0.86, eh * 0.42, el * 0.8, M.dark, 0, eh * 1.12, -el * 0.13));
+    e.add(box(ew * 0.4, eh * 0.8, 0.3, M.steel, 0, -eh * 0.26, -el * 0.36));
+    let px: number, pz: number;
+    if (big) {
+      px = -1.71 + Math.floor(i / 2) * 1.14;
+      pz = i % 2 === 0 ? -hl - 0.35 : -hl - 1.5;
+    } else {
+      px = -1.26 + i * 0.84;
+      pz = -6.9;
+    }
+    e.position.set(px, 0.4, pz);
     g.add(e);
     const puff = new THREE.Object3D();
-    puff.position.set(px, 0.2, -7.9);
+    puff.position.set(px, 0.25, pz - 1.1);
     g.add(puff);
     enginePuffs.push(puff);
   }
   // torreta con ametralladora en proa
   const turret = new THREE.Group();
-  turret.position.set(0, 1.35, 3.6);
+  turret.position.set(0, big ? 1.95 : 1.35, big ? 5.6 : 3.6);
   const mount = box(0.5, 0.7, 0.5, M.steel);
   mount.position.y = 0.35;
   turret.add(mount);
@@ -234,8 +268,8 @@ export function buildGoFast(def: CraftDef): PlayerRig {
   muzzle.position.set(0, 0.98, 2.8);
   turret.add(muzzle);
   g.add(turret);
-  const bowAnchor = new THREE.Object3D(); bowAnchor.position.set(0, 0.4, 9.2); g.add(bowAnchor);
-  const sternAnchor = new THREE.Object3D(); sternAnchor.position.set(0, 0.3, -8.2); g.add(sternAnchor);
+  const bowAnchor = new THREE.Object3D(); bowAnchor.position.set(0, 0.4, big ? 18.9 : 9.2); g.add(bowAnchor);
+  const sternAnchor = new THREE.Object3D(); sternAnchor.position.set(0, 0.3, big ? -12.6 : -8.2); g.add(sternAnchor);
   return { group: g, turret, muzzle, enginePuffs, bowAnchor, sternAnchor };
 }
 
