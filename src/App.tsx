@@ -15,6 +15,7 @@ const DEFAULT_HUD: HudData = {
   objective: "", target: null, blindSpot: null, canInteract: null, progress: -1,
   zoom: false, damageT: -10000, hitT: -10000, contracts: 0,
   aimRange: -1, aimTarget: "", gear: true, alt: 0, jetsLeft: 3, missileWarn: null,
+  hypers: 0, hypersMax: 0,
 };
 
 export default function App() {

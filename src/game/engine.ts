@@ -40,6 +40,17 @@ interface PoliceJetEnt {
 }
 interface EnemyMissile { mesh: THREE.Group; vel: THREE.Vector3; life: number; }
 interface PoliceCarrierEnt { group: THREE.Group; pos: THREE.Vector3; heading: number; hp: number; maxHp: number; smokeT: number; }
+interface HyperMissile {
+  mesh: THREE.Group;
+  vel: THREE.Vector3;
+  speed: number;
+  life: number;
+  smokeT: number;
+  tgtKind: "merchant" | "patrol" | "pjet" | "carrier";
+  tgtRef: Merchant | Patrol | PoliceJetEnt | PoliceCarrierEnt | null;
+  lastPos: THREE.Vector3;
+  radius: number;
+}
 interface Missile { mesh: THREE.Group; start: THREE.Vector3; end: THREE.Vector3; t: number; dur: number; arc: number; }
 interface Particle {
   s: THREE.Sprite; vel: THREE.Vector3; life: number; maxLife: number;
@@ -162,9 +173,9 @@ export class Game {
   private aimTarget = "";
   private pcMissileT = 4;
   private missileWarn: { dist: number; angle: number } | null = null;
-  private flashCharges: number;
-  private flashBoostT = 0; // segundos restantes de FLASH activo
-  private flashDartUsed = false; // un misil rasante por activación
+  private hypers: number;
+  private hyperCool = 0;
+  private hyperMissiles: HyperMissile[] = [];
 
   // cuerda de abordaje (visible en la zona ciega)
   private ropeGeo = new THREE.BufferGeometry();
@@ -185,7 +196,7 @@ export class Game {
     this.hullMax = def.hull;
     this.torps = def.torpedoes;
     this.missiles = def.missiles;
-    this.flashCharges = def.flashCharges ?? 0;
+    this.hypers = def.hypers ?? 0;
 
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
@@ -650,50 +661,18 @@ export class Game {
     const k = this.keys;
     const tIn = (k.has("KeyW") || k.has("ArrowUp") ? 1 : 0) - (k.has("KeyS") || k.has("ArrowDown") ? 0.55 : 0);
     this.throttle = lerp(this.throttle, tIn, dt * 2.2);
-    // MODO FLASH (RAYO 360): tecla 1 activa/corta, dura 10 s, ×3 cargas
-    if (this.pressed.has("Digit1") && def.flashCharges) {
-      if (this.flashBoostT > 0) {
-        this.flashBoostT = 0;
-        this.pushMsg("FLASH cortado", "info");
-        this.sfx.flashOff();
-      } else if (this.flashCharges > 0) {
-        this.flashCharges--;
-        this.flashBoostT = 10;
-        this.flashDartUsed = false;
-        this.pushMsg("¡MODO FLASH! 10 s a 450 NUDOS · tecla 1 lo corta · tecla 2 suelta el misil rasante", "good");
-        this.sfx.flashOn();
-        this.shake = Math.min(2, this.shake + 0.5);
-      } else {
-        this.pushMsg("Sin cargas FLASH. Vende mercancía para reabastecer.", "warn");
+    // tecla T: proyectil hipersónico guiado al objetivo más cercano (3 unidades)
+    this.hyperCool -= dt;
+    if (this.pressed.has("KeyT") && def.hypers) {
+      if (this.hypers > 0 && this.hyperCool <= 0) this.launchHyperMissile();
+      else if (this.hypers <= 0) {
+        this.pushMsg("Sin proyectiles hipersónicos. Reabastece vendiendo mercancía.", "warn");
         this.sfx.empty();
       }
     }
-    if (this.flashBoostT > 0) {
-      this.flashBoostT = Math.max(0, this.flashBoostT - dt);
-      if (this.flashBoostT === 0) {
-        this.pushMsg("FLASH agotado", "warn");
-        this.sfx.flashOff();
-      }
-    }
-    const flashOn = this.craftId === "rayo" && this.flashBoostT > 0;
-    const flashK = flashOn ? 231.5 / def.topSpeed : 1; // 450 nudos
     const boost = k.has("ShiftLeft") && !def.submarine ? 1.22 : 1;
-    const target = this.throttle * def.topSpeed * boost * flashK * (this.submerged ? 0.62 : 1);
-    this.speed = lerp(this.speed, target, dt * (def.accel / 10) * (flashOn ? 4.6 : 2.4));
-    // espuma extra de los motores durante el flash
-    if (flashOn && Math.random() < 0.85) {
-      for (const p of this.craft.enginePuffs) {
-        const wp = new THREE.Vector3();
-        p.getWorldPosition(wp);
-        this.spawnP(wp, new THREE.Vector3(rand(-1, 1), rand(0.5, 1.6), rand(-1, 1)), 0.6, rand(1.4, 2.6), 3, 0xaef4ff, 0.7, 0.5, true);
-      }
-    }
-    // tecla 2: misil rasante al barco más cercano (solo durante el FLASH, uno por carga)
-    if (this.pressed.has("Digit2") && this.craftId === "rayo") {
-      if (!flashOn) this.pushMsg("El misil rasante solo se suelta con el FLASH activo (tecla 1)", "warn");
-      else if (this.flashDartUsed) this.pushMsg("Ya soltaste el rasante de esta carga FLASH", "warn");
-      else this.launchSkimmer();
-    }
+    const target = this.throttle * def.topSpeed * boost * (this.submerged ? 0.62 : 1);
+    this.speed = lerp(this.speed, target, dt * (def.accel / 10) * 2.4);
     const turnIn = (k.has("KeyA") || k.has("ArrowLeft") ? 1 : 0) - (k.has("KeyD") || k.has("ArrowRight") ? 1 : 0);
     const speedFactor = clamp(Math.abs(this.speed) / 6, 0.25, 1);
     this.heading += turnIn * def.turn * speedFactor * dt * Math.sign(this.speed >= 0 ? 1 : -1);
@@ -1450,6 +1429,140 @@ export class Game {
       }
     }
     this.darts = this.darts.filter((d) => d.life > 0);
+  }
+
+  // ----------------------------------------- proyectil hipersónico (tecla T)
+  private hyperTargetName(k: HyperMissile["tgtKind"]) {
+    return k === "merchant" ? "BUQUE" : k === "patrol" ? "PATRULLERA" : k === "pjet" ? "CAZA POLICIAL" : "PORTAAVIONES POLICIAL";
+  }
+
+  private nearestHyperTarget(): { kind: HyperMissile["tgtKind"]; ref: HyperMissile["tgtRef"]; pos: THREE.Vector3; radius: number } | null {
+    const from = this.craft.group.position;
+    let best: { kind: HyperMissile["tgtKind"]; ref: HyperMissile["tgtRef"]; pos: THREE.Vector3; radius: number } | null = null;
+    let bd = 1e9;
+    const consider = (kind: HyperMissile["tgtKind"], ref: HyperMissile["tgtRef"], pos: THREE.Vector3, radius: number) => {
+      const d = pos.distanceTo(from);
+      if (d < bd) { bd = d; best = { kind, ref, pos, radius }; }
+    };
+    for (const m of this.merchants) {
+      if (m.state === "sinking" || m.state === "sold" || m.hijacked) continue;
+      const p = m.rig.group.position.clone(); p.y += 8;
+      consider("merchant", m, p, m.rig.deck.len * 0.32);
+    }
+    for (const pt of this.patrols) {
+      const p = pt.rig.group.position.clone(); p.y += 3;
+      consider("patrol", pt, p, 16);
+    }
+    for (const pj of this.policeJets) consider("pjet", pj, pj.pos.clone(), 12);
+    if (this.policeCarrier) {
+      const p = this.policeCarrier.pos.clone(); p.y += 12;
+      consider("carrier", this.policeCarrier, p, 75);
+    }
+    return best;
+  }
+
+  private launchHyperMissile() {
+    const tgt = this.nearestHyperTarget();
+    this.hypers--;
+    this.hyperCool = 0.8;
+    const g = new THREE.Group();
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0xd8dde2, roughness: 0.45, metalness: 0.3 });
+    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.55, 3.6, 4, 10), bodyMat);
+    body.rotation.x = Math.PI / 2;
+    g.add(body);
+    const nose = new THREE.Mesh(new THREE.ConeGeometry(0.55, 3.4, 10), new THREE.MeshStandardMaterial({ color: 0xff7a1a, roughness: 0.4 }));
+    nose.rotation.x = Math.PI / 2;
+    nose.position.z = 3.5;
+    g.add(nose);
+    const finMat = new THREE.MeshStandardMaterial({ color: 0x303844, roughness: 0.6, flatShading: true });
+    for (const s of [-1, 1]) {
+      const fin = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.1, 1.4), finMat);
+      fin.position.set(s * 0.62, 0, -1.7);
+      g.add(fin);
+    }
+    const finV = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.12, 1.4), finMat);
+    finV.position.set(0, 0.62, -1.7);
+    g.add(finV);
+    const start = new THREE.Vector3();
+    this.craft.bowAnchor.getWorldPosition(start);
+    start.y = Math.max(start.y, waveH(start.x, start.z, this.t)) + 2.5;
+    const fwd = new THREE.Vector3(Math.sin(this.heading), 0, Math.cos(this.heading));
+    g.position.copy(start);
+    this.scene.add(g);
+    const vel = fwd.clone().multiplyScalar(320).add(new THREE.Vector3(0, 260, 0));
+    this.hyperMissiles.push({
+      mesh: g, vel, speed: 520, life: 9, smokeT: 0,
+      tgtKind: tgt ? tgt.kind : "merchant",
+      tgtRef: tgt ? tgt.ref : null,
+      lastPos: tgt ? tgt.pos.clone() : start.clone().addScaledVector(fwd, 800),
+      radius: tgt ? tgt.radius : 20,
+    });
+    this.sfx.hyperLaunch();
+    this.raiseWanted(2);
+    this.shake = Math.min(1.6, this.shake + 0.45);
+    this.pushMsg(tgt ? `¡HIPERSÓNICO EN VUELO → ${this.hyperTargetName(tgt.kind)}!` : "¡HIPERSÓNICO LANZADO SIN OBJETIVO!", "danger");
+  }
+
+  private updateHyperMissiles(dt: number) {
+    for (const hm of this.hyperMissiles) {
+      hm.life -= dt;
+      const t = this.nearestHyperTarget();
+      if (t) { hm.lastPos.copy(t.pos); hm.radius = t.radius; hm.tgtKind = t.kind; hm.tgtRef = t.ref; }
+      const toT = hm.lastPos.clone().sub(hm.mesh.position);
+      const distT = toT.length();
+      hm.speed = Math.min(1500, hm.speed + 900 * dt);
+      const desired = toT.normalize().multiplyScalar(hm.speed);
+      hm.vel.lerp(desired, clamp(dt * 2.2, 0, 1));
+      const seaY = waveH(hm.mesh.position.x, hm.mesh.position.z, this.t);
+      if (hm.mesh.position.y < seaY + 22) hm.vel.y += 500 * dt;
+      if (hm.mesh.position.y > seaY + 160) hm.vel.y -= 300 * dt;
+      hm.mesh.position.addScaledVector(hm.vel, dt);
+      hm.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), hm.vel.clone().normalize());
+      hm.smokeT -= dt;
+      if (hm.smokeT <= 0) {
+        hm.smokeT = 0.016;
+        for (let i = 0; i < 3; i++) {
+          this.spawnP(
+            hm.mesh.position.clone().add(new THREE.Vector3(rand(-0.6, 0.6), rand(-0.4, 0.4), rand(-0.6, 0.6))),
+            new THREE.Vector3(rand(-1.5, 1.5), rand(0.5, 2), rand(-1.5, 1.5)),
+            rand(1.4, 2.2), rand(1.6, 2.6), rand(7, 11), i === 0 ? 0x2c2c2c : 0x555a60, 0.6, -0.25, false
+          );
+        }
+        this.spawnP(hm.mesh.position.clone(), new THREE.Vector3(), 0.12, 1.2, 3.2, 0xffc070, 1, 0, true);
+      }
+      let hit = false;
+      if (distT < hm.radius) {
+        hit = true;
+        this.missileHits++;
+        this.explosion(hm.mesh.position.clone(), 2.6);
+        this.shake = Math.min(2.4, this.shake + 1.4);
+        this.sfx.boom();
+        if (hm.tgtKind === "merchant" && hm.tgtRef) {
+          const m = hm.tgtRef as Merchant;
+          m.hp -= 260;
+          this.raiseWanted(4);
+          this.alertMerchant(m);
+          this.pushMsg(`¡EL HIPERSÓNICO ATRAVIESA ${m.name}!`, "danger");
+          this.finishImpact(m);
+        } else if (hm.tgtKind === "patrol" && hm.tgtRef) {
+          this.destroyPatrol(hm.tgtRef as Patrol);
+        } else if (hm.tgtKind === "pjet" && hm.tgtRef) {
+          this.hitPoliceJet(hm.tgtRef as PoliceJetEnt, 999);
+        } else if (hm.tgtKind === "carrier") {
+          this.damagePoliceCarrier(170);
+        }
+      } else if (hm.mesh.position.y < seaY + 0.5) {
+        hit = true;
+        this.splash(hm.mesh.position.clone(), 1.6);
+        this.explosion(hm.mesh.position.clone(), 1.2);
+      }
+      if (hit || hm.life <= 0) {
+        if (!hit) this.explosion(hm.mesh.position.clone(), 1);
+        this.scene.remove(hm.mesh);
+        hm.life = -1;
+      }
+    }
+    this.hyperMissiles = this.hyperMissiles.filter((h) => h.life > 0);
   }
 
   private toLocal(m: Merchant, world: THREE.Vector3): THREE.Vector3 {

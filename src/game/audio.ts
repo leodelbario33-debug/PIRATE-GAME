@@ -280,4 +280,11 @@ export class SFX {
     this.noiseBurst(1.1, 900, 0.5, "bandpass");
     this.tone(90, 1.2, 0.4, "sawtooth", 240);
   }
+  hyperLaunch() {
+    // trueno supersónico: rugido grave + silbido ascendente + aire desplazado
+    this.tone(46, 1.1, 0.6, "sine", 22);
+    this.tone(70, 0.9, 0.32, "sawtooth", 170);
+    this.noiseBurst(1.3, 2400, 0.45, "bandpass");
+    this.tone(280, 1.2, 0.16, "sawtooth", 2600);
+  }
 }
