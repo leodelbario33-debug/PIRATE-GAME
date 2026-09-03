@@ -142,6 +142,12 @@ export class SFX {
     this.noiseBurst(0.7, 500, 0.4, "bandpass");
     this.tone(220, 0.6, 0.2, "sine", 70);
   }
+  missileLaunch() {
+    // silbido ascendente del cohete + rugido
+    this.noiseBurst(0.9, 1600, 0.4, "highpass");
+    this.tone(240, 0.8, 0.3, "sawtooth", 1050);
+    this.tone(120, 0.5, 0.25, "square", 320);
+  }
   hit() { this.tone(900, 0.06, 0.22, "square", 400); }
   hurt() { this.tone(160, 0.25, 0.4, "sawtooth", 70); }
   buzz() { this.tone(90, 0.35, 0.5, "sawtooth", 55); this.noiseBurst(0.2, 2400, 0.3, "highpass"); }

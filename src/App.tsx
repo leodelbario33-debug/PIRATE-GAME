@@ -11,7 +11,7 @@ const EMPTY_RADAR: RadarSnap = { px: 0, pz: 0, heading: 0, range: 900, blips: []
 const DEFAULT_HUD: HudData = {
   mode: "sea", health: 100, hull: 100, hullMax: 100, shipHull: 300, shipHullMax: 300,
   speed: 0, throttle: 0, wanted: 0, money: 0, ammo: 30, magSize: 30, reloading: false,
-  torps: 0, torpsMax: 0, depth: 0, submerged: false,
+  torps: 0, torpsMax: 0, missiles: 0, missilesMax: 0, depth: 0, submerged: false,
   objective: "", target: null, blindSpot: null, canInteract: null, progress: -1,
   zoom: false, damageT: -10000, hitT: -10000, contracts: 0,
   aimRange: -1, aimTarget: "",

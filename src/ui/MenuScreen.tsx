@@ -122,8 +122,9 @@ function CraftCard({ id, selected, onPick, delay }: { id: CraftId; selected: boo
       <div className="mt-2 pt-2 border-t border-white/10 flex items-center justify-between gap-2 text-[11px]">
         <span className="text-white/45 truncate">{def.weaponName}</span>
         <span className="flex items-center gap-2 shrink-0">
-          <span className="font-mono font-bold text-[#ffce73]">{Math.round(def.topSpeed * 1.94)} kn</span>
+          <span className="font-mono font-bold text-[#ffce73]">{def.displayKnots} kn</span>
           {def.torpedoes > 0 && <span className="text-[#ffb347] font-bold">{def.torpedoes} TORPEDOS</span>}
+          {def.missiles > 0 && <span className="text-[#ff6a5e] font-bold">{def.missiles} MISILES</span>}
         </span>
       </div>
     </button>

@@ -15,7 +15,7 @@ export function PauseScreen({ onResume, onRestart, onMenu }: { onResume: () => v
           <div><b className="text-[#29e0d2]">RATÓN</b> — apuntar · clic dispara</div>
           <div><b className="text-[#29e0d2]">E</b> — abordar · secuestrar · atracar</div>
           <div><b className="text-[#29e0d2]">C</b> — periscopio: hunde el casco, deja el cañón fuera</div>
-          <div><b className="text-[#29e0d2]">ESPACIO</b> — lanzar torpedo</div>
+          <div><b className="text-[#29e0d2]">ESPACIO</b> — torpedo / misil aéreo</div>
           <div><b className="text-[#29e0d2]">R</b> — recargar el AK</div>
           <div><b className="text-[#29e0d2]">CLIC DER.</b> — mira ×8 (SHIFT: aguantar respiración)</div>
           <div><b className="text-[#29e0d2]">SHIFT</b> — turbo / correr</div>
@@ -59,7 +59,7 @@ export function GameOverScreen({ info, onRetry, onMenu }: { info: GameOverInfo; 
           ))}
         </div>
         <div className="text-[12px] text-white/40 mb-4 tracking-wide">
-          Torpedos impactados: {info.torpHits} · El mar siempre ofrece una segunda marea.
+          Torpedos impactados: {info.torpHits} · Misiles acertados: {info.missileHits} · El mar siempre ofrece una segunda marea.
         </div>
         <div className="flex gap-3">
           <button onClick={onRetry} className="btn-naval flex-1 bg-[#ff7a1a] text-black px-6 py-3.5 text-xl">ZARPAR OTRA VEZ</button>

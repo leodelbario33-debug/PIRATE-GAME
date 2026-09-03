@@ -488,10 +488,10 @@ export function buildMerchant(kind: MerchantKind, name: string): MerchantRig {
 
   // ---- tripulación (guardias + jefe + capitán) ----
   const guardLocals: THREE.Vector3[] = [];
-  let nGuards = 5;
-  if (kind === "tanker") nGuards = 6;
-  if (kind === "yacht") nGuards = 4;
-  if (kind === "liner") nGuards = 8;
+  let nGuards = 3;
+  if (kind === "tanker") nGuards = 4;
+  if (kind === "yacht") nGuards = 3;
+  if (kind === "liner") nGuards = 5;
   for (let i = 0; i < nGuards; i++) {
     const zc = -len * 0.32 + (i * len * 0.62) / Math.max(1, nGuards - 1);
     const xc = i % 2 === 0 ? 0 : (wid / 2 - 4.2) * (i % 4 === 1 ? 1 : -1);

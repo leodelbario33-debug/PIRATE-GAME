@@ -27,6 +27,7 @@ interface Patrol {
   fireT: number; burstLeft: number; burstT: number; hp: number;
 }
 interface Torpedo { mesh: THREE.Group; dir: THREE.Vector3; speed: number; life: number; depth: number; }
+interface Missile { mesh: THREE.Group; start: THREE.Vector3; end: THREE.Vector3; t: number; dur: number; arc: number; }
 interface Particle {
   s: THREE.Sprite; vel: THREE.Vector3; life: number; maxLife: number;
   s0: number; s1: number; grav: number; op: number;
@@ -67,6 +68,10 @@ export class Game {
   private depth = 0;
   private torps: number;
   private torpCool = 0;
+  private missiles: number;
+  private missileCool = 0;
+  private missilesFly: Missile[] = [];
+  private missileHits = 0;
   private fireCool = 0;
   private mag = 30;
   private reloading = false;
@@ -149,6 +154,7 @@ export class Game {
     this.hull = def.hull;
     this.hullMax = def.hull;
     this.torps = def.torpedoes;
+    this.missiles = def.missiles;
 
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
@@ -215,7 +221,13 @@ export class Game {
     this.buildWorld();
     this.bindInput();
     this.pushMsg(`Contrato abierto: roba la mercancía de cualquier barco y véndela en la cala.`, "info");
-    this.pushMsg(`Detecta contactos en el radar y acércate por proa o popa.`, "info");
+    if (this.craftId === "viuda") {
+      this.pushMsg(`Tienes 4 MISILES AÉREOS (ESPACIO): apunta con la mira ×8 (CLIC DER) y revienta cascos desde lejos.`, "good");
+    } else if (this.craftId === "tiburon") {
+      this.pushMsg(`Detecta contactos en el radar y caza con torpedos desde el periscopio (C).`, "info");
+    } else {
+      this.pushMsg(`Detecta contactos en el radar y acércate por proa o popa.`, "info");
+    }
     this.loop();
   }
 
@@ -279,7 +291,7 @@ export class Game {
       r.group.position.copy(loc);
       r.group.rotation.y = rand(0, Math.PI * 2);
       rig.group.add(r.group);
-      const g: GuardEnt = { rig: r, hp: 45, alive: true, surrendered: false, fireT: rand(0.4, 1.4), burstLeft: 0, burstT: 0, local: loc.clone(), isBoss: false, fallT: 0, strafeSeed: rand(0, 9) };
+      const g: GuardEnt = { rig: r, hp: 34, alive: true, surrendered: false, fireT: rand(0.5, 1.6), burstLeft: 0, burstT: 0, local: loc.clone(), isBoss: false, fallT: 0, strafeSeed: rand(0, 9) };
       m.guards.push(g);
       const hb = new THREE.Mesh(new THREE.BoxGeometry(1.5, 2.4, 1.5), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
       hb.position.y = 1.2;
@@ -292,7 +304,7 @@ export class Game {
       r.group.scale.setScalar(1.3);
       r.group.position.copy(rig.deck.bossLocal);
       rig.group.add(r.group);
-      const b: GuardEnt = { rig: r, hp: 120, alive: true, surrendered: false, fireT: 0.8, burstLeft: 0, burstT: 0, local: rig.deck.bossLocal.clone(), isBoss: true, fallT: 0, strafeSeed: 3 };
+      const b: GuardEnt = { rig: r, hp: 85, alive: true, surrendered: false, fireT: 1.0, burstLeft: 0, burstT: 0, local: rig.deck.bossLocal.clone(), isBoss: true, fallT: 0, strafeSeed: 3 };
       m.boss = b;
       m.guards.push(b);
       const hb = new THREE.Mesh(new THREE.BoxGeometry(1.8, 2.8, 1.8), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
@@ -506,7 +518,7 @@ export class Game {
     this.sfx.siren(false);
     this.sfx.engine(0, 1, false);
     document.exitPointerLock();
-    this.cb.onGameOver({ cause, title, detail, money: this.money, contracts: this.contracts, kills: this.kills, torpHits: this.torpHits, timeSec: Math.floor(this.timeSec) });
+    this.cb.onGameOver({ cause, title, detail, money: this.money, contracts: this.contracts, kills: this.kills, torpHits: this.torpHits, missileHits: this.missileHits, timeSec: Math.floor(this.timeSec) });
   }
 
   // ------------------------------------------------------------- bucle
@@ -540,6 +552,7 @@ export class Game {
     this.updateMerchants(dt);
     this.updatePatrols(dt);
     this.updateTorpedoes(dt);
+    this.updateMissiles(dt);
     this.updateWanted(dt);
     this.updateFx(dt);
     this.updateCamera(dt);
@@ -646,6 +659,12 @@ export class Game {
     if (this.pressed.has("Space") && def.submarine) {
       if (this.torps > 0 && this.torpCool <= 0) this.launchTorpedo();
       else if (this.torps <= 0) { this.pushMsg("Sin torpedos. Vende mercancía para reabastecer.", "warn"); this.sfx.empty(); }
+    }
+    // misiles aéreos (La Viuda)
+    this.missileCool -= dt;
+    if (this.pressed.has("Space") && def.missiles > 0) {
+      if (this.missiles > 0 && this.missileCool <= 0) this.launchMissile();
+      else if (this.missiles <= 0) { this.pushMsg("Rampa de misiles vacía. Reabastece vendiendo mercancía.", "warn"); this.sfx.empty(); }
     }
 
     // detección de zona ciega para abordar
@@ -919,6 +938,11 @@ export class Game {
     this.raiseWanted(3);
     this.alertMerchant(m);
     this.pushMsg(`¡IMPACTO DE TORPEDO EN ${m.name}!`, "danger");
+    this.finishImpact(m);
+  }
+
+  // daños finales tras un impacto pesado (torpedo / misil)
+  private finishImpact(m: Merchant) {
     if (m.hp <= 0 && m.state !== "sinking") {
       m.state = "sinking";
       m.baseSpeed = 0;
@@ -928,6 +952,103 @@ export class Game {
       m.baseSpeed = 0;
       this.pushMsg(`${m.name} AVERIADO — motores muertos, abordar será más fácil`, "good");
     }
+  }
+
+  // ------------------------------------------------------------- misiles aéreos
+  private launchMissile() {
+    // punto de impacto: donde apunta la mira
+    const dir = this.camDir();
+    const from = this.camera.position.clone();
+    const hit = this.raycastWorld(from, dir, 3000);
+    const end = hit
+      ? hit.point.clone()
+      : from.clone().addScaledVector(dir, 850).setY(waveH(from.x + dir.x * 850, from.z + dir.z * 850, this.t));
+    const start = new THREE.Vector3();
+    this.craft.bowAnchor.getWorldPosition(start);
+    start.y = Math.max(start.y, waveH(start.x, start.z, this.t)) + 1.5;
+    const dist = start.distanceTo(end);
+    // cohete BR-8
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.28, 2.6, 4, 8), new THREE.MeshStandardMaterial({ color: 0x5a6470, roughness: 0.4, metalness: 0.5 }));
+    body.rotation.x = Math.PI / 2;
+    g.add(body);
+    const nose = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.8, 8), new THREE.MeshStandardMaterial({ color: 0xd84040, roughness: 0.5 }));
+    nose.rotation.x = Math.PI / 2;
+    nose.position.z = 1.9;
+    g.add(nose);
+    for (const fx of [-1, 1]) {
+      const fin = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.6, 0.7), new THREE.MeshStandardMaterial({ color: 0x39424e, roughness: 0.6 }));
+      fin.position.set(fx * 0.3, 0, -1.3);
+      g.add(fin);
+    }
+    g.position.copy(start);
+    this.scene.add(g);
+    this.missilesFly.push({ mesh: g, start: start.clone(), end, t: 0, dur: clamp(dist / 95, 0.7, 4.5), arc: clamp(dist * 0.4, 30, 320) });
+    this.missiles--;
+    this.missileCool = 1.6;
+    this.sfx.missileLaunch();
+    this.raiseWanted(2);
+    this.shake = Math.min(1.4, this.shake + 0.35);
+    this.pushMsg("¡MISIL BR-8 EN EL AIRE!", "info");
+  }
+
+  private updateMissiles(dt: number) {
+    for (const mi of this.missilesFly) {
+      mi.t += dt / mi.dur;
+      const k = Math.min(1, mi.t);
+      const pos = mi.start.clone().lerp(mi.end, k);
+      pos.y += mi.arc * Math.sin(Math.PI * k);
+      mi.mesh.position.copy(pos);
+      // orientar según la trayectoria
+      const k2 = Math.min(1, mi.t + 0.03);
+      const next = mi.start.clone().lerp(mi.end, k2);
+      next.y += mi.arc * Math.sin(Math.PI * k2);
+      mi.mesh.lookAt(next);
+      // estela de fuego + humo
+      this.spawnP(pos, new THREE.Vector3(rand(-0.5, 0.5), rand(-0.3, 0.5), rand(-0.5, 0.5)), 0.35, 1.4, 0.2, 0xffa040, 0.9, 0, true);
+      if (Math.random() < 0.8) this.smoke(pos, 1);
+      if (mi.t >= 1) {
+        this.missileImpact(mi.end);
+        this.scene.remove(mi.mesh);
+      }
+    }
+    this.missilesFly = this.missilesFly.filter((mi) => mi.t < 1);
+  }
+
+  private missileImpact(at: THREE.Vector3) {
+    // ¿le dio a un barco? (caja del casco en horizontal)
+    let target: Merchant | null = null;
+    for (const m of this.merchants) {
+      if (m.state === "sinking" || m.state === "sold" || m.hijacked) continue;
+      const local = this.toLocal(m, at);
+      const d = m.rig.deck;
+      if (Math.abs(local.x) < d.wid / 2 + 3 && Math.abs(local.z) < d.len / 2 + 5) { target = m; break; }
+    }
+    if (target) {
+      const p = at.clone();
+      p.y = Math.max(p.y, waveH(p.x, p.z, this.t) + 1);
+      this.explosion(p, 2.1);
+      this.missileHits++;
+      target.hp -= 38; // más que un torpedo: el misil aéreo es lo que más daño hace
+      this.raiseWanted(3);
+      this.alertMerchant(target);
+      this.pushMsg(`¡IMPACTO DIRECTO DE MISIL EN ${target.name}! (−38)`, "danger");
+      this.finishImpact(target);
+      return;
+    }
+    for (const pt of this.patrols) {
+      if (pt.rig.group.position.distanceTo(at) < 16) {
+        this.missileHits++;
+        this.explosion(pt.rig.group.position.clone().add(new THREE.Vector3(0, 2, 0)), 1.7);
+        this.destroyPatrol(pt);
+        return;
+      }
+    }
+    // al agua
+    const s = at.clone();
+    s.y = waveH(s.x, s.z, this.t);
+    this.explosion(s, 1.1);
+    this.splash(s, 2.4);
   }
 
   // ------------------------------------------------------------- abordaje
@@ -1148,7 +1269,7 @@ export class Game {
     const from = gw.clone().add(new THREE.Vector3(0, 1.5, 0));
     this.muzzleFlash(from.clone());
     this.sfx.enemyShot();
-    const acc = clamp((g.isBoss ? 0.6 : 0.45) - dist * 0.005, 0.1, 0.6);
+    const acc = clamp((g.isBoss ? 0.5 : 0.36) - dist * 0.005, 0.08, 0.5);
     const target = playerW.clone().add(new THREE.Vector3(0, 1.2, 0));
     if (Math.random() < acc) {
       this.tracer(from, target, 0xff5a4a);
@@ -1277,6 +1398,7 @@ export class Game {
     this.hull = Math.min(this.hullMax, this.hull + this.hullMax * 0.5);
     this.health = Math.min(100, this.health + 40);
     this.torps = CRAFTS[this.craftId].torpedoes;
+    this.missiles = CRAFTS[this.craftId].missiles;
     this.wanted = 2;
     this.submerged = false;
     // limpiar mercantes vendidos y lejanos
@@ -1312,9 +1434,9 @@ export class Game {
       const g = m.rig.group;
       m.alertT = Math.max(0, m.alertT - dt);
 
-      // esquivar torpedos: los pesados giran lento
+      // esquivar torpedos: los cascos pesados apenas giran (y averiados, nada)
       let dodging = false;
-      if (m.state === "sail" || m.state === "disabled") {
+      if (m.state === "sail") {
         for (const t of this.torpedoes) {
           const toT = t.mesh.position.clone().sub(g.position);
           const dist = toT.length();
@@ -1323,9 +1445,8 @@ export class Game {
             if (closing) {
               dodging = true;
               const away = Math.atan2(-toT.x, -toT.z) + Math.PI / 2;
-              // los cascos pesados giran lento: de lejos esquivan, de cerca no les da tiempo
-              m.heading += clamp(angDiff(m.heading, away), -0.09 * dt, 0.09 * dt) * 2.4;
-              if (m.state === "disabled") m.baseSpeed = 0;
+              // giro muy lento: ~5°/s — casi nunca les da tiempo
+              m.heading += clamp(angDiff(m.heading, away), -0.045 * dt, 0.045 * dt) * 2;
             }
           }
         }
@@ -1344,7 +1465,8 @@ export class Game {
           m.wp.set(rand(-2300, 2300), 0, rand(-2300, 2300));
         }
         const desired = Math.atan2(toWp.x, toWp.z);
-        m.heading += clamp(angDiff(m.heading, desired), -0.1 * dt, 0.1 * dt) * 3;
+        // timón pesado: los mercantes trazan rutas amplias, no viran en seco
+        m.heading += clamp(angDiff(m.heading, desired), -0.06 * dt, 0.06 * dt) * 2.4;
         m.speed = lerp(m.speed, m.baseSpeed, dt * 0.4);
       } else if (m.boarded && !m.hijacked) {
         m.speed = lerp(m.speed, 0, dt * 1.2);
@@ -1621,7 +1743,10 @@ export class Game {
   private updateObjective() {
     if (this.mode === "sea") {
       if (!this.nearestTarget || this.nearestTarget.rig.group.position.distanceTo(this.craft.group.position) > 600) {
-        this.objective = "Navega y detecta un barco en el radar (contactos ámbar)";
+        this.objective =
+          this.craftId === "viuda"
+            ? "Detecta un barco en el radar y revienta su casco con misiles (ESPACIO) o aborda por la zona ciega"
+            : "Navega y detecta un barco en el radar (contactos ámbar)";
       } else if (this.blindSpot) {
         this.objective = `Aborda por ${this.blindSpot} (zona ciega) — pulsa E`;
       } else {
@@ -1715,6 +1840,8 @@ export class Game {
       reloading: this.reloading,
       torps: this.torps,
       torpsMax: def.torpedoes,
+      missiles: this.missiles,
+      missilesMax: def.missiles,
       depth: this.depth,
       submerged: this.submerged,
       objective: this.objective,

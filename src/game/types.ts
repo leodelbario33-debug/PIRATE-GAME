@@ -5,7 +5,7 @@ export interface CraftDef {
   name: string;
   cls: string;
   desc: string;
-  topSpeed: number; // m/s
+  topSpeed: number; // m/s (base; el turbo ×1.22 lleva al máximo anunciado)
   accel: number;
   turn: number; // rad/s
   hull: number;
@@ -13,8 +13,10 @@ export interface CraftDef {
   weaponDmg: number;
   fireRate: number; // shots per second
   torpedoes: number;
+  missiles: number; // misiles aéreos (arco balístico)
   submarine: boolean;
   color: string;
+  displayKnots: number; // velocidad punta anunciada en nudos
   stats: { velocidad: number; viraje: number; blindaje: number; potencia: number }; // 1..5
 }
 
@@ -23,35 +25,39 @@ export const CRAFTS: Record<CraftId, CraftDef> = {
     id: "viuda",
     name: "LA VIUDA",
     cls: "NARCOLANCHA 4× FUERABORDA",
-    desc: "Casco negro de 14 metros con cuatro motores de 600 HP: vuela a 75 NUDOS sobre el oleaje. Monta una Browning M2 calibre .50 en proa.",
-    topSpeed: 38.7,
-    accel: 9.5,
+    desc: "Cuatro motores de 600 HP que la llevan a 95 NUDOS. Además de la Browning .50 monta una rampa con 4 MISILES AÉREOS BR-8: apunta bien con la mira y reventarás el casco que sea.",
+    topSpeed: 40.0,
+    accel: 11,
     turn: 1.6,
     hull: 100,
-    weaponName: "AMETRALLADORA .50",
+    weaponName: "BROWNING .50 + MISILES BR-8",
     weaponDmg: 11,
     fireRate: 7,
     torpedoes: 0,
+    missiles: 4,
     submarine: false,
     color: "#101820",
+    displayKnots: 95,
     stats: { velocidad: 5, viraje: 4, blindaje: 2, potencia: 5 },
   },
   fantasma: {
     id: "fantasma",
     name: "FANTASMA X",
     cls: "INTERCEPTOR FURTIVO",
-    desc: "Perfil bajo, pintura mate que desaparece al atardecer y una minigun M134 de 6 cañones que sierra el acero. 50 NUDOS: menos casco, más cadencia.",
-    topSpeed: 25.8,
-    accel: 9,
+    desc: "Perfil bajo, pintura mate que desaparece al atardecer y una minigun M134 de 6 cañones que sierra el acero. Estira hasta 70 NUDOS: menos casco, más cadencia.",
+    topSpeed: 29.5,
+    accel: 10,
     turn: 1.9,
     hull: 80,
     weaponName: "MINIGUN M134",
     weaponDmg: 5,
     fireRate: 16,
     torpedoes: 0,
+    missiles: 0,
     submarine: false,
     color: "#151a22",
-    stats: { velocidad: 4, viraje: 5, blindaje: 1, potencia: 4 },
+    displayKnots: 70,
+    stats: { velocidad: 5, viraje: 5, blindaje: 1, potencia: 4 },
   },
   tiburon: {
     id: "tiburon",
@@ -66,8 +72,10 @@ export const CRAFTS: Record<CraftId, CraftDef> = {
     weaponDmg: 14,
     fireRate: 4,
     torpedoes: 6,
+    missiles: 0,
     submarine: true,
     color: "#0b0f14",
+    displayKnots: 32,
     stats: { velocidad: 2, viraje: 3, blindaje: 5, potencia: 5 },
   },
 };
@@ -94,6 +102,8 @@ export interface HudData {
   reloading: boolean;
   torps: number;
   torpsMax: number;
+  missiles: number;
+  missilesMax: number;
   depth: number;
   submerged: boolean;
   objective: string;
@@ -132,6 +142,7 @@ export interface GameOverInfo {
   contracts: number;
   kills: number;
   torpHits: number;
+  missileHits: number;
   timeSec: number;
 }
 

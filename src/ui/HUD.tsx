@@ -200,7 +200,7 @@ export default function HUD({ hud, msgs, getRadar }: Props) {
         ? "W/S acelerar · A/D timón · E atracar en el punto de venta"
         : isSub
           ? "W/S acelerar · A/D timón · CLIC cañón periscópico · ESPACIO torpedo · C periscopio (casco bajo el agua) · E subir por la cuerda · CLIC DER mira ×8"
-          : "W/S acelerar · A/D timón · CLIC ametralladora · SHIFT turbo · E subir por la cuerda · CLIC DER mira ×8 (SHIFT: pulso firme)";
+          : `W/S acelerar · A/D timón · CLIC ${hud.missilesMax > 0 ? ".50 · ESPACIO misil aéreo" : "minigun"} · SHIFT turbo · E subir por la cuerda · CLIC DER mira ×8 (SHIFT: pulso firme)`;
 
   return (
     <div className="absolute inset-0 pointer-events-none z-20 font-[family-name:var(--font-ui)]">
@@ -298,6 +298,16 @@ export default function HUD({ hud, msgs, getRadar }: Props) {
             <div className="flex gap-1.5 justify-end mt-1">
               {Array.from({ length: hud.torpsMax }).map((_, i) => (
                 <div key={i} className="w-2.5 h-6" style={{ background: i < hud.torps ? "linear-gradient(180deg,#ffd76a,#ff7a1a)" : "rgba(255,255,255,0.1)", clipPath: "polygon(50% 0, 100% 22%, 100% 100%, 0 100%, 0 22%)" }} />
+              ))}
+            </div>
+          </div>
+        )}
+        {hud.missilesMax > 0 && (
+          <div className="hud-panel px-4 py-2 text-right" style={{ borderColor: "rgba(216,64,64,0.45)" }}>
+            <div className="hud-title text-[11px] text-[#ff6a5e]">MISILES BR-8 · ESPACIO</div>
+            <div className="flex gap-1.5 justify-end mt-1">
+              {Array.from({ length: hud.missilesMax }).map((_, i) => (
+                <div key={i} className="w-2.5 h-6" style={{ background: i < hud.missiles ? "linear-gradient(180deg,#ff8a7a,#c22020)" : "rgba(255,255,255,0.1)", clipPath: "polygon(50% 0, 100% 18%, 100% 78%, 70% 100%, 30% 100%, 0 78%, 0 18%)" }} />
               ))}
             </div>
           </div>
