@@ -312,6 +312,16 @@ export default function HUD({ hud, msgs, getRadar }: Props) {
             </div>
           </div>
         )}
+        {hud.hypersMax > 0 && (
+          <div className="hud-panel px-4 py-2 text-right" style={{ borderColor: "rgba(74,140,255,0.5)" }}>
+            <div className="hud-title text-[11px] text-[#6ea8ff]">INTERCEPTORES GUIADOS · T</div>
+            <div className="flex gap-1.5 justify-end mt-1">
+              {Array.from({ length: hud.hypersMax }).map((_, i) => (
+                <div key={i} className="w-2.5 h-6" style={{ background: i < hud.hypers ? "linear-gradient(180deg,#cfe0ff,#3d6fd8)" : "rgba(255,255,255,0.1)", clipPath: "polygon(50% 0, 100% 18%, 100% 78%, 70% 100%, 30% 100%, 0 78%, 0 18%)" }} />
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* crosshair */}

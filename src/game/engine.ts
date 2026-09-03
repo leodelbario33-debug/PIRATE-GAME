@@ -613,6 +613,7 @@ export class Game {
     this.updateTorpedoes(dt);
     this.updateMissiles(dt);
     this.updateDarts(dt);
+    this.updateHyperMissiles(dt);
     this.updatePoliceForces(dt);
     this.updateEnemyMissiles(dt);
     this.updateWanted(dt);
@@ -1466,22 +1467,23 @@ export class Game {
     this.hypers--;
     this.hyperCool = 0.8;
     const g = new THREE.Group();
-    const bodyMat = new THREE.MeshStandardMaterial({ color: 0xd8dde2, roughness: 0.45, metalness: 0.3 });
-    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.55, 3.6, 4, 10), bodyMat);
+    // mismo cuerpo que el interceptor guiado del portaaviones policial
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0xe8ecf0, roughness: 0.4, metalness: 0.35 });
+    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.3, 2.6, 4, 8), bodyMat);
     body.rotation.x = Math.PI / 2;
     g.add(body);
-    const nose = new THREE.Mesh(new THREE.ConeGeometry(0.55, 3.4, 10), new THREE.MeshStandardMaterial({ color: 0xff7a1a, roughness: 0.4 }));
+    const nose = new THREE.Mesh(new THREE.ConeGeometry(0.3, 1.1, 8), bodyMat);
     nose.rotation.x = Math.PI / 2;
-    nose.position.z = 3.5;
+    nose.position.z = 1.85;
     g.add(nose);
-    const finMat = new THREE.MeshStandardMaterial({ color: 0x303844, roughness: 0.6, flatShading: true });
+    const finMat = new THREE.MeshStandardMaterial({ color: 0x2a4a7a, roughness: 0.55, flatShading: true });
     for (const s of [-1, 1]) {
-      const fin = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.1, 1.4), finMat);
-      fin.position.set(s * 0.62, 0, -1.7);
+      const fin = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.8, 1), finMat);
+      fin.position.set(s * 0.38, 0, -1.2);
       g.add(fin);
     }
-    const finV = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.12, 1.4), finMat);
-    finV.position.set(0, 0.62, -1.7);
+    const finV = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.1, 1), finMat);
+    finV.position.set(0, 0.38, -1.2);
     g.add(finV);
     const start = new THREE.Vector3();
     this.craft.bowAnchor.getWorldPosition(start);
@@ -1489,9 +1491,9 @@ export class Game {
     const fwd = new THREE.Vector3(Math.sin(this.heading), 0, Math.cos(this.heading));
     g.position.copy(start);
     this.scene.add(g);
-    const vel = fwd.clone().multiplyScalar(320).add(new THREE.Vector3(0, 260, 0));
+    const vel = fwd.clone().multiplyScalar(250).add(new THREE.Vector3(0, 240, 0));
     this.hyperMissiles.push({
-      mesh: g, vel, speed: 520, life: 9, smokeT: 0,
+      mesh: g, vel, speed: 340, life: 14, smokeT: 0,
       tgtKind: tgt ? tgt.kind : "merchant",
       tgtRef: tgt ? tgt.ref : null,
       lastPos: tgt ? tgt.pos.clone() : start.clone().addScaledVector(fwd, 800),
@@ -1510,12 +1512,11 @@ export class Game {
       if (t) { hm.lastPos.copy(t.pos); hm.radius = t.radius; hm.tgtKind = t.kind; hm.tgtRef = t.ref; }
       const toT = hm.lastPos.clone().sub(hm.mesh.position);
       const distT = toT.length();
-      hm.speed = Math.min(1500, hm.speed + 900 * dt);
-      const desired = toT.normalize().multiplyScalar(hm.speed);
-      hm.vel.lerp(desired, clamp(dt * 2.2, 0, 1));
+      // guiado continuo como el interceptor policial: corrige rumbo cada frame, casi nunca falla
+      const cur = hm.vel.clone().normalize().lerp(toT.normalize(), clamp(dt * 3.4, 0, 1)).normalize();
+      hm.vel = cur.multiplyScalar(340);
       const seaY = waveH(hm.mesh.position.x, hm.mesh.position.z, this.t);
-      if (hm.mesh.position.y < seaY + 22) hm.vel.y += 500 * dt;
-      if (hm.mesh.position.y > seaY + 160) hm.vel.y -= 300 * dt;
+      if (hm.mesh.position.y < seaY + 18) hm.vel.y = Math.abs(hm.vel.y) + 260 * dt;
       hm.mesh.position.addScaledVector(hm.vel, dt);
       hm.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), hm.vel.clone().normalize());
       hm.smokeT -= dt;
@@ -2545,6 +2546,8 @@ export class Game {
       alt: this.jet ? Math.max(0, this.jet.pos.y - waveH(this.jet.pos.x, this.jet.pos.z, this.t)) : 0,
       jetsLeft: this.parkedJets.length,
       missileWarn: this.missileWarn,
+      hypers: this.hypers,
+      hypersMax: def.hypers ?? 0,
     };
     this.cb.onHud(h);
   }

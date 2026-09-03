@@ -275,57 +275,59 @@ export function buildGoFast(def: CraftDef): PlayerRig {
 
 export function buildRacer(def: CraftDef): PlayerRig {
   const g = new THREE.Group();
-  // catamarán ancho y bajo: dos cascos gemelos + puente central
-  for (const s of [-1, 1]) {
-    const hull = new THREE.Mesh(new THREE.BoxGeometry(2.3, 1.15, 17), M.hullDark);
-    hull.position.set(s * 2.6, 0.55, 0.6);
-    g.add(hull);
-    // proa inclinada de cada casco
-    const bow = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 1.15, 4.8, 4, 1), M.hullDark);
-    bow.rotation.x = Math.PI / 2;
-    bow.rotation.y = Math.PI / 4;
-    bow.scale.set(1, 1, 0.62);
-    bow.position.set(s * 2.6, 0.5, 11.3);
-    g.add(bow);
-    // franja de carreras naranja
-    g.add(box(2.35, 0.26, 17.1, M.orange, s * 2.6, 0.98, 0.6));
-    // patín interior blanco
-    g.add(box(0.5, 0.3, 15.4, M.white, s * 1.55, 0.45, 0.2));
+  // casco único MUY LARGO: popa ancha que se afina hacia la proa (40 m de eslora)
+  const segs: [number, number, number, number][] = [
+    // [ancho, profundidad, centroZ, altoY]
+    [7.4, 8, -12, 1.25],
+    [6.4, 8, -4, 1.25],
+    [5.0, 8, 4, 1.2],
+    [3.4, 7, 11.5, 1.1],
+    [1.8, 5, 17.5, 1.0],
+  ];
+  for (const [w, d, zc, h] of segs) {
+    g.add(box(w, h, d, M.hullDark, 0, h / 2 - 0.15, zc));
+    // franja de carreras a ambos costados del segmento
+    for (const s of [-1, 1]) g.add(box(0.16, 0.3, d + 0.05, M.orange, s * (w / 2 - 0.05), h * 0.62, zc));
   }
-  // piso de cubierta: losa ancha que une los dos cascos (se camina sobre ella)
-  g.add(box(7.8, 0.34, 14.6, M.deckSteel, 0, 1.12, 0.4));
-  g.add(box(7.9, 0.1, 14.7, M.black, 0, 0.93, 0.4));
-  // cubierta-puente central ancha
-  g.add(box(4.6, 0.55, 12.6, M.deckSteel, 0, 1.5, 0.2));
-  // cabina baja de carreras con parabrisas
-  g.add(box(3.1, 0.85, 2.5, M.dark, 0, 2.15, 2.6));
-  g.add(box(2.9, 0.55, 0.14, M.windowBlue, 0, 2.5, 3.82));
+  // punta de proa afilada
+  const bowTip = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 1.1, 5, 4, 1), M.hullDark);
+  bowTip.rotation.x = Math.PI / 2;
+  bowTip.rotation.y = Math.PI / 4;
+  bowTip.scale.set(0.85, 1, 0.5);
+  bowTip.position.set(0, 0.45, 22.4);
+  g.add(bowTip);
+  // piso de cubierta continuo (se camina sobre él de popa a proa)
+  g.add(box(6.9, 0.3, 32, M.deckSteel, 0, 1.28, 2));
+  g.add(box(7.0, 0.08, 32.1, M.black, 0, 1.1, 2));
+  // cabina baja en la zona ancha de popa
+  g.add(box(3.4, 0.9, 3.2, M.dark, 0, 1.95, -9));
+  g.add(box(3.2, 0.6, 0.14, M.windowBlue, 0, 2.35, -7.42));
   // jaula antivuelco
-  for (const s of [-1, 1]) g.add(box(0.12, 0.8, 0.12, M.steel, s * 1.35, 2.75, 2.2));
-  g.add(box(2.8, 0.12, 0.12, M.steel, 0, 3.15, 2.2));
-  // alerón trasero grande
-  g.add(box(6.6, 0.14, 1.2, M.orange, 0, 2.6, -8.2));
-  for (const s of [-1, 1]) g.add(box(0.16, 0.9, 0.5, M.dark, s * 2.4, 2.1, -8.2));
+  for (const s of [-1, 1]) g.add(box(0.12, 0.85, 0.12, M.steel, s * 1.5, 2.6, -9.6));
+  g.add(box(3.1, 0.12, 0.12, M.steel, 0, 3.0, -9.6));
+  // alerón trasero ancho sobre los motores
+  g.add(box(7.2, 0.14, 1.3, M.orange, 0, 2.75, -14.4));
+  for (const s of [-1, 1]) g.add(box(0.16, 1.0, 0.5, M.dark, s * 2.7, 2.2, -14.4));
   // toma de aire central
-  g.add(box(1.1, 0.6, 1.6, M.black, 0, 2.0, -2.4));
+  g.add(box(1.2, 0.6, 1.8, M.black, 0, 1.9, -5.2));
   // 8 motores de 800 HP en fila en la popa ancha
   const enginePuffs: THREE.Object3D[] = [];
   for (let i = 0; i < 8; i++) {
     const e = new THREE.Group();
-    e.add(box(0.62, 1.35, 1.8, M.black, 0, 0.65, 0));
-    e.add(box(0.55, 0.5, 1.5, M.orange, 0, 1.5, -0.1));
-    e.add(box(0.26, 0.85, 0.26, M.steel, 0, -0.25, -0.5));
-    const px = -2.8 + i * 0.8;
-    e.position.set(px, 0.35, -9.2);
+    e.add(box(0.72, 1.45, 1.9, M.black, 0, 0.7, 0));
+    e.add(box(0.62, 0.55, 1.6, M.orange, 0, 1.6, -0.1));
+    e.add(box(0.3, 0.9, 0.3, M.steel, 0, -0.25, -0.55));
+    const px = -2.98 + i * 0.85;
+    e.position.set(px, 0.35, -16.6);
     g.add(e);
     const puff = new THREE.Object3D();
-    puff.position.set(px, 0.25, -10.4);
+    puff.position.set(px, 0.25, -17.9);
     g.add(puff);
     enginePuffs.push(puff);
   }
-  // torreta compacta a proa
+  // torreta compacta hacia proa
   const turret = new THREE.Group();
-  turret.position.set(0, 1.85, 5.6);
+  turret.position.set(0, 1.75, 10);
   turret.add(box(0.45, 0.6, 0.45, M.steel, 0, 0.3, 0));
   turret.add(box(0.3, 0.32, 1.7, M.black, 0, 0.82, 0.45));
   const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 1.4, 6), M.steel);
@@ -336,8 +338,8 @@ export function buildRacer(def: CraftDef): PlayerRig {
   muzzle.position.set(0, 0.85, 2.5);
   turret.add(muzzle);
   g.add(turret);
-  const bowAnchor = new THREE.Object3D(); bowAnchor.position.set(0, 0.5, 13.6); g.add(bowAnchor);
-  const sternAnchor = new THREE.Object3D(); sternAnchor.position.set(0, 0.3, -11.2); g.add(sternAnchor);
+  const bowAnchor = new THREE.Object3D(); bowAnchor.position.set(0, 0.5, 24); g.add(bowAnchor);
+  const sternAnchor = new THREE.Object3D(); sternAnchor.position.set(0, 0.3, -18.5); g.add(sternAnchor);
   return { group: g, turret, muzzle, enginePuffs, bowAnchor, sternAnchor };
 }
 
