@@ -705,15 +705,15 @@ export class Game {
       const hF = waveH(pos.x + fwd.x * e, pos.z + fwd.z * e, this.t);
       const side = new THREE.Vector3(fwd.z, 0, -fwd.x);
       const hS = waveH(pos.x + side.x * e, pos.z + side.z * e, this.t);
-      // la proa se levanta al planear: más velocidad, más morro arriba
+      // la proa se levanta al planear: suave, acotada y sin inversiones bruscas
       const spdK = clamp(Math.abs(this.speed) / def.topSpeed, 0, 1);
-      const liftK = this.craftId === "fantasma" ? 0.25 : this.craftId === "viuda" ? 0.55 : this.craftId === "kraken" ? 0.04 : 0.3;
-      const powK = this.craftId === "viuda" ? 2.0 : 1.5;
-      const planing = Math.pow(spdK, powK) * liftK;
-      const wavePitch = Math.atan2(hC - hF, e) * 0.8;
-      // casco planeador: el empuje de los motores saca la proa del agua; a tope no puede hundirse
-      const maxDip = 0.16 * (1 - spdK);
-      this.craft.group.rotation.x = clamp(wavePitch - planing, -0.6, maxDip);
+      const liftK = this.craftId === "fantasma" ? 0.2 : this.craftId === "viuda" ? 0.17 : this.craftId === "kraken" ? 0.03 : 0.13;
+      const planing = Math.pow(spdK, 1.7) * liftK;
+      const wavePitch = Math.atan2(hC - hF, e) * 0.5;
+      // límites: nunca más de ~14° arriba y casi nada abajo a velocidad
+      const targetPitch = clamp(wavePitch - planing, -0.24, 0.08 * (1 - spdK));
+      // suavizado temporal: al cruzar una ola el morro no se invierte de golpe
+      this.craft.group.rotation.x = lerp(this.craft.group.rotation.x, targetPitch, clamp(dt * 5, 0, 1));
       this.craft.group.rotation.z = Math.atan2(hS - hC, e) * 0.9;
     } else {
       this.craft.group.rotation.x = lerp(this.craft.group.rotation.x, this.throttle * 0.12, dt * 2);
