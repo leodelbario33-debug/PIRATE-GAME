@@ -51,4 +51,7 @@ Fight rival pirates and big ships and dominate the seas.
 
 Just pure pirate madness, epic battles, and endless fun.
 
+_______________________________________________________________________________________________________________________________________________________________
+
+
 In conclusion this pirate adventure brings together chaos and excitement across the seas where every ship has its own personality and power and every mission feels like a battle for survival the combination of police chases daring robberies and epic naval combat creates a world full of adrenaline the variety of ships from the deadly Widow to the monstrous Kraken ensures that every player finds their own style of domination and the freedom to explore fight and conquer makes this game a thrilling journey that never stops surprising
