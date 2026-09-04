@@ -180,7 +180,7 @@ export function buildGoFast(def: CraftDef): PlayerRig {
   const hw = big ? 2.7 : 1.7; // semimanga
   const hh = big ? 0.85 : 0.55; // semipuntal
   const hl = big ? 10 : 6.5; // semieslora
-  const bowLen = big ? 9.5 : 4;
+  const bowLen = big ? 9.5 : def.id === "fantasma" ? 6.8 : 4;
   // casco: proa hacia +Z
   const hull = new THREE.Mesh(new THREE.BoxGeometry(hw * 2, hh * 2, hl * 2), M.hullDark);
   hull.position.y = hh;
@@ -201,6 +201,17 @@ export function buildGoFast(def: CraftDef): PlayerRig {
   // asientos y detalles
   g.add(box(hw * 1.29, 0.5, 2.4, M.black, 0, hh * 2 + 0.25, -hl * 0.185));
   g.add(box(0.5, 0.8, 0.5, M.steel, hw * 0.7, hh * 2 + 0.4, hl * 0.52));
+  if (def.id === "fantasma") {
+    // superestructura de dos pisos medianos
+    g.add(box(2.7, 1.5, 4.4, M.dark, 0, hh * 2 + 0.75, -hl * 0.12));
+    g.add(box(2.78, 0.6, 4.5, M.windowBlue, 0, hh * 2 + 1.1, -hl * 0.12));
+    g.add(box(2.2, 1.3, 3.4, M.hullDark, 0, hh * 2 + 2.15, -hl * 0.16));
+    g.add(box(2.28, 0.5, 3.5, M.windowBlue, 0, hh * 2 + 2.4, -hl * 0.16));
+    g.add(box(1.2, 0.5, 1.2, M.steel, 0, hh * 2 + 3.05, -hl * 0.2));
+    // alerón y tomas laterales
+    g.add(box(3.3, 0.12, 0.9, M.orange, 0, hh * 2 + 2.9, -hl * 0.62));
+    for (const s of [-1, 1]) g.add(box(0.3, 0.9, 2.2, M.black, s * 1.55, hh * 2 + 0.45, -hl * 0.3));
+  }
   if (big) {
     // hardtop con radar
     g.add(box(3.6, 0.32, 3.4, M.deckSteel, 0, hh * 2 + 1.6, hl * 0.185));

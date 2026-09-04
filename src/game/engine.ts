@@ -705,7 +705,11 @@ export class Game {
       const hF = waveH(pos.x + fwd.x * e, pos.z + fwd.z * e, this.t);
       const side = new THREE.Vector3(fwd.z, 0, -fwd.x);
       const hS = waveH(pos.x + side.x * e, pos.z + side.z * e, this.t);
-      this.craft.group.rotation.x = Math.atan2(hC - hF, e) * 0.8;
+      // la proa se levanta al planear: más velocidad, más morro arriba
+      const spdK = clamp(Math.abs(this.speed) / def.topSpeed, 0, 1);
+      const liftK = this.craftId === "fantasma" ? 0.2 : 0.06;
+      const planing = Math.pow(spdK, 1.5) * liftK;
+      this.craft.group.rotation.x = Math.atan2(hC - hF, e) * 0.8 - planing;
       this.craft.group.rotation.z = Math.atan2(hS - hC, e) * 0.9;
     } else {
       this.craft.group.rotation.x = lerp(this.craft.group.rotation.x, this.throttle * 0.12, dt * 2);

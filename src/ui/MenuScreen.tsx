@@ -51,14 +51,24 @@ function drawBlueprint(cv: HTMLCanvasElement, id: CraftId) {
     label("M2 .50", 240, 88);
     label("14 m", 150, 156);
   } else if (id === "fantasma") {
-    poly([[66, 116], [268, 116], [316, 124], [298, 136], [66, 136]]);
-    poly([[120, 116], [150, 100], [216, 100], [232, 116]]);
-    rect(48, 136, 12, 16); rect(66, 136, 12, 16);
+    // casco con proa larga
+    poly([[58, 116], [262, 116], [322, 122], [296, 136], [58, 136]]);
+    // dos pisos de superestructura
+    rect(120, 96, 88, 20);
+    rect(136, 78, 62, 18);
+    ctx.beginPath(); ctx.moveTo(140, 100); ctx.lineTo(204, 100); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(146, 82); ctx.lineTo(192, 82); ctx.stroke();
+    // alerón trasero
+    ctx.beginPath(); ctx.moveTo(70, 104); ctx.lineTo(112, 104); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(82, 116); ctx.lineTo(76, 104); ctx.moveTo(104, 116); ctx.lineTo(108, 104); ctx.stroke();
+    // torreta a proa
     ctx.beginPath(); ctx.arc(252, 108, 7, 0, Math.PI * 2); ctx.stroke();
     for (let i = -1; i <= 1; i++) { ctx.beginPath(); ctx.moveTo(252, 108); ctx.lineTo(284, 104 + i * 4); ctx.stroke(); }
-    label("MINIGUN M134", 226, 90);
-    label("PERFIL BAJO", 130, 92);
-    label("12 m", 150, 152);
+    // motores
+    rect(40, 136, 12, 16); rect(58, 136, 12, 16);
+    label("MINIGUN M134", 224, 90);
+    label("2 PISOS", 140, 72);
+    label("PROA LARGA · 200 NUDOS", 110, 154);
   } else if (id === "rayo") {
     // catamarán ancho: dos cascos gemelos vistos de perfil + puente
     poly([[70, 118], [250, 118], [300, 126], [288, 140], [70, 140]]);
