@@ -465,92 +465,241 @@ export function buildLauncher(def: CraftDef): PlayerRig {
 export function buildBullet(def: CraftDef): PlayerRig {
   void def;
   const g = new THREE.Group();
-  g.add(box(3.1, 1.05, 17, M.hullDark, 0, 0.55, 0));
-  const bow = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 1.55, 7.5, 4, 1), M.hullDark);
+  // ---- casco: gordo por popa, se afina hacia la proa ----
+  const segs: [number, number, number, number][] = [
+    // [ancho, alto, largo, z]
+    [7.0, 1.55, 6.0, -7.5], // popa bien ancha y alta
+    [6.0, 1.4, 6.0, -1.8],
+    [4.6, 1.2, 6.0, 3.9],
+    [3.2, 1.05, 5.5, 8.6], // proa fina
+  ];
+  for (const [w, h, d, z] of segs) g.add(box(w, h, d, M.hullDark, 0, h / 2, z));
+  // punta de proa afilada
+  const bow = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 1.6, 6.5, 4, 1), M.hullDark);
   bow.rotation.x = Math.PI / 2;
   bow.rotation.y = Math.PI / 4;
-  bow.scale.set(1, 1, 0.45);
-  bow.position.set(0, 0.5, 12);
+  bow.scale.set(1, 1, 0.42);
+  bow.position.set(0, 0.5, 14.5);
   g.add(bow);
-  g.add(box(3.16, 0.22, 17.1, M.orange, 0, 0.95, 0));
-  // cabina cerrada aerodinámica
-  g.add(box(2.3, 1.15, 4.4, M.dark, 0, 1.65, 3.4));
-  g.add(box(2.38, 0.55, 4.5, M.windowBlue, 0, 1.9, 3.4));
-  const nose = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 1.15, 1.9, 4, 1), M.dark);
+  // franja naranja longitudinal a lo largo del costado
+  g.add(box(7.06, 0.24, 24, M.orange, 0, 1.1, -2));
+  // cubierta superior de popa (plataforma de motores)
+  g.add(box(6.6, 0.3, 12, M.deckSteel, 0, 1.62, -4));
+
+  // ---- cabina cerrada aerodinámica (hacia proa) ----
+  g.add(box(2.6, 1.15, 4.6, M.dark, 0, 1.9, 5.6));
+  g.add(box(2.68, 0.55, 4.7, M.windowBlue, 0, 2.15, 5.6));
+  const nose = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 1.3, 2.2, 4, 1), M.dark);
   nose.rotation.x = Math.PI / 2;
   nose.rotation.y = Math.PI / 4;
   nose.scale.set(1, 0.5, 0.55);
-  nose.position.set(0, 1.6, 6.2);
+  nose.position.set(0, 1.9, 8.4);
   g.add(nose);
   // aletín trasero
-  g.add(box(0.16, 1.1, 2.4, M.hullDark, 0, 1.6, -7.6));
-  g.add(box(2.4, 0.1, 1.1, M.orange, 0, 2.15, -7.6));
-  // soporte + planeador plegado arriba (se oculta al lanzarlo)
-  g.add(box(0.3, 1.0, 0.3, M.steel, -0.9, 1.6, -2.2));
-  g.add(box(0.3, 1.0, 0.3, M.steel, 0.9, 1.6, -2.2));
+  g.add(box(0.16, 1.2, 2.6, M.hullDark, 0, 2.2, -10));
+  g.add(box(3.4, 0.1, 1.2, M.orange, 0, 2.8, -10));
+
+  // ---- toldo tipo PARACAÍDAS en proa: se abre al llegar a 300 nudos ----
+  const canopy = new THREE.Group();
+  canopy.name = "aeroCanopy";
+  // cúpula de paracaídas (media esfera con paneles alternos)
+  const domeMatA = new THREE.MeshStandardMaterial({ color: 0xe8621c, roughness: 0.7, flatShading: true, side: THREE.DoubleSide });
+  const domeMatB = new THREE.MeshStandardMaterial({ color: 0xe8e4d8, roughness: 0.7, flatShading: true, side: THREE.DoubleSide });
+  const nPan = 8;
+  for (let i = 0; i < nPan; i++) {
+    const a0 = (i / nPan) * Math.PI * 2;
+    const a1 = ((i + 1) / nPan) * Math.PI * 2;
+    const pg = new THREE.SphereGeometry(3.1, 6, 6, a0, a1 - a0, 0, Math.PI / 2.15);
+    const pm = new THREE.Mesh(pg, i % 2 === 0 ? domeMatA : domeMatB);
+    pm.position.set(0, 3.6, 4.6);
+    canopy.add(pm);
+  }
+  // costillas radiales del paracaídas
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    const rib = box(0.08, 0.08, 3.1, M.steel, Math.cos(a) * 1.45, 3.6 + Math.sin(a) * 1.45 * 0.45, 4.6);
+    rib.rotation.z = a;
+    canopy.add(rib);
+  }
+  // suspentes (cuerdas) desde la cúpula hasta la cubierta
+  for (const [sx, sz] of [[-2.6, 2.4], [2.6, 2.4], [-2.6, 6.8], [2.6, 6.8]]) {
+    canopy.add(box(0.09, 3.2, 0.09, M.steel, sx, 2.0, sz));
+  }
+  // aro de la boca del paracaídas
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(3.05, 0.09, 6, 16), M.steel);
+  rim.rotation.x = Math.PI / 2;
+  rim.position.set(0, 3.6, 4.6);
+  canopy.add(rim);
+  canopy.visible = false;
+  g.add(canopy);
+
+  // ---- soporte + planeador plegado arriba (se oculta al lanzarlo) ----
+  g.add(box(0.3, 1.0, 0.3, M.steel, -0.9, 2.1, 0.4));
+  g.add(box(0.3, 1.0, 0.3, M.steel, 0.9, 2.1, 0.4));
   const rack = buildGlider(true);
   rack.name = "rackGlider";
   rack.scale.setScalar(0.8);
-  rack.position.set(0, 2.55, -2.2);
+  rack.position.set(0, 3.0, 0.4);
   g.add(rack);
-  // motor grande único
+
+  // ---- 15 motores grandes en popa (3 filas × 5) ----
   const enginePuffs: THREE.Object3D[] = [];
-  const e = new THREE.Group();
-  e.add(box(1.5, 1.5, 2.4, M.black, 0, 0.75, 0));
-  e.add(box(1.3, 0.6, 2.0, M.dark, 0, 1.7, -0.2));
-  e.position.set(0, 0.35, -9.4);
-  g.add(e);
-  const puff = new THREE.Object3D();
-  puff.position.set(0, 0.3, -10.8);
-  g.add(puff);
-  enginePuffs.push(puff);
-  // torreta a proa
+  for (let row = 0; row < 3; row++) {
+    for (let col = 0; col < 5; col++) {
+      const px = -2.4 + col * 1.2;
+      const pz = -11.2 - row * 1.35;
+      const e = new THREE.Group();
+      e.add(box(1.0, 1.5, 1.15, M.black, 0, 0.75, 0));
+      e.add(box(0.86, 0.55, 0.95, M.dark, 0, 1.65, -0.1));
+      e.add(box(0.34, 0.8, 0.3, M.steel, 0, -0.35, -0.45));
+      e.position.set(px, 1.5, pz);
+      g.add(e);
+      const puff = new THREE.Object3D();
+      puff.position.set(px, 1.35, pz - 1.0);
+      g.add(puff);
+      enginePuffs.push(puff);
+    }
+  }
+
+  // ---- torreta a proa ----
   const turret = new THREE.Group();
-  turret.position.set(0, 1.25, 6.2);
+  turret.position.set(0, 1.4, 10.4);
   turret.add(box(0.4, 0.5, 0.4, M.steel, 0, 0.25, 0));
   turret.add(box(0.26, 0.3, 1.5, M.black, 0, 0.72, 0.4));
   const muzzle = new THREE.Object3D();
   muzzle.position.set(0, 0.72, 2.2);
   turret.add(muzzle);
   g.add(turret);
-  const bowAnchor = new THREE.Object3D(); bowAnchor.position.set(0, 0.5, 15.4); g.add(bowAnchor);
-  const sternAnchor = new THREE.Object3D(); sternAnchor.position.set(0, 0.3, -10.6); g.add(sternAnchor);
+  const bowAnchor = new THREE.Object3D(); bowAnchor.position.set(0, 0.5, 17.4); g.add(bowAnchor);
+  const sternAnchor = new THREE.Object3D(); sternAnchor.position.set(0, 0.3, -15.4); g.add(sternAnchor);
   return { group: g, turret, muzzle, enginePuffs, bowAnchor, sternAnchor };
 }
 
-// planeador: ala en delta, flotadores y motora trasera
+// planeador con silueta de caza ligero: morro afilado, cabina burbuja, alas en flecha y doble deriva
 export function buildGlider(folded = false): THREE.Group {
   const g = new THREE.Group();
-  const fuse = new THREE.Mesh(new THREE.CapsuleGeometry(0.42, 3.6, 4, 8), M.white);
-  fuse.rotation.x = Math.PI / 2;
-  g.add(fuse);
-  g.add(box(0.5, 0.4, 1.1, M.windowBlue, 0, 0.3, 1.1));
-  // alas enormes en delta
-  const wingW = folded ? 2.6 : 21;
-  const wing = new THREE.Mesh(new THREE.BoxGeometry(wingW, 0.14, 2.7), M.orange);
-  wing.position.set(0, 0.12, -0.2);
-  g.add(wing);
-  if (!folded) {
-    const wing2 = new THREE.Mesh(new THREE.BoxGeometry(wingW, 0.06, 1.0), M.white);
-    wing2.position.set(0, 0.2, 0.45);
-    g.add(wing2);
-    for (const s of [-1, 1]) {
-      const tip = box(0.12, 0.7, 1.4, M.hullDark, s * (wingW / 2 - 0.05), 0.42, -0.2);
-      g.add(tip);
+  const body = new THREE.MeshStandardMaterial({ color: 0xdfe4e8, roughness: 0.4, metalness: 0.3, flatShading: true });
+  const accent = new THREE.MeshStandardMaterial({ color: 0xe8621c, roughness: 0.5, flatShading: true, side: THREE.DoubleSide });
+  const darkM = new THREE.MeshStandardMaterial({ color: 0x14181e, roughness: 0.5, metalness: 0.4, flatShading: true });
+
+  // ---- fuselaje de avioneta con cabina, piso y 12 plazas ----
+  g.add(box(2.1, 2.0, 7.6, body, 0, 0.55, 0));
+  g.add(box(1.94, 0.12, 7.3, M.deckSteel, 0, -0.38, 0)); // piso interior
+  const noseCone = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 1.05, 2.6, 4, 1), accent);
+  noseCone.rotation.x = Math.PI / 2;
+  noseCone.rotation.y = Math.PI / 4;
+  noseCone.scale.set(1, 0.85, 0.8);
+  noseCone.position.set(0, 0.6, 5.0);
+  g.add(noseCone);
+  const wind = box(1.86, 0.95, 0.16, M.windowBlue, 0, 1.28, 3.6);
+  wind.rotation.x = -0.32;
+  g.add(wind);
+  // ventanas laterales y 12 asientos (2 columnas × 6 filas)
+  for (const s of [-1, 1]) {
+    g.add(box(0.1, 0.75, 6.2, M.windowBlue, s * 1.03, 0.95, -0.1));
+    for (let i = 0; i < 6; i++) {
+      g.add(box(0.14, 0.5, 0.5, darkM, s * 1.08, 0.82, 2.4 - i * 1.02));
+      g.add(box(0.14, 0.24, 0.3, M.hullRed, s * 1.08, 1.18, 2.4 - i * 1.02));
     }
   }
-  const tail = new THREE.Mesh(new THREE.BoxGeometry(folded ? 3 : 6.6, 0.1, 1.1), M.white);
-  tail.position.set(0, 0.5, -2.1);
-  g.add(tail);
-  g.add(box(0.1, 0.9, 0.7, M.white, 0, 0.9, -2.1));
+  // puerta trasera abierta: se ve el piso
+  g.add(box(0.12, 1.25, 1.3, darkM, -1.04, 0.35, -3.0));
+  g.add(box(0.5, 0.08, 1.2, M.deckSteel, -0.85, -0.3, -3.0));
+  g.add(box(2.16, 0.14, 7.66, accent, 0, 1.62, 0)); // franja del techo
+
+  // ---- ala alta recta con franja blanca ----
+  const span = folded ? 3.8 : 13.5;
+  const wing = new THREE.Mesh(new THREE.BoxGeometry(span, 0.18, 2.6), accent);
+  wing.position.set(0, 2.35, -0.2);
+  g.add(wing);
+  const stripe = new THREE.Mesh(new THREE.BoxGeometry(span, 0.07, 1.0), body);
+  stripe.position.set(0, 2.47, 0.35);
+  g.add(stripe);
+
+  // ---- puntales del ala, puntas y luces de navegación ----
   for (const s of [-1, 1]) {
-    const fl = new THREE.Mesh(new THREE.CapsuleGeometry(0.22, 1.6, 3, 6), M.hullDark);
-    fl.rotation.x = Math.PI / 2;
-    fl.position.set(s * 0.8, -0.55, 0.1);
-    g.add(fl);
+    if (!folded) {
+      const strut = box(0.14, 2.2, 0.14, M.steel, s * 1.35, 1.3, 0.5);
+      strut.rotation.z = s * -0.55;
+      g.add(strut);
+      const tip = box(0.12, 0.8, 1.5, darkM, s * (span / 2 - 0.05), 2.7, -0.2);
+      g.add(tip);
+      const navMat = new THREE.MeshStandardMaterial({ color: 0x111111, emissive: s < 0 ? 0xff2222 : 0x22ff66, emissiveIntensity: 2.4 });
+      const nav = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.3), navMat);
+      nav.position.set(s * (span / 2 - 0.02), 2.35, 1.0);
+      g.add(nav);
+    }
   }
-  // motora plegada trasera
-  g.add(box(0.5, 0.5, 0.9, M.black, 0, 0.05, -2.6));
+
+  // ---- empenaje: doble deriva en V y estabilizadores en flecha ----
+  const stabShape = new THREE.Shape();
+  stabShape.moveTo(0, 0);
+  stabShape.lineTo(folded ? 1.5 : 3.3, 0.8);
+  stabShape.lineTo(folded ? 1.5 : 3.3, 1.7);
+  stabShape.lineTo(0, 1.6);
+  stabShape.closePath();
+  const stabGeo = new THREE.ExtrudeGeometry(stabShape, { depth: 0.09, bevelEnabled: false });
+  stabGeo.rotateX(-Math.PI / 2);
+  const stabR = new THREE.Mesh(stabGeo, body);
+  stabR.position.set(0.1, 0.28, -1.9);
+  g.add(stabR);
+  const stabL = new THREE.Mesh(stabGeo, body);
+  stabL.scale.x = -1;
+  stabL.position.set(-0.1, 0.28, -1.9);
+  g.add(stabL);
+  for (const s of [-1, 1]) {
+    const fin = box(0.07, 0.95, 1.25, accent, s * 0.42, 0.68, -2.35);
+    fin.rotation.z = -s * 0.32;
+    fin.rotation.y = s * 0.18;
+    g.add(fin);
+  }
+
+  // ---- motor delantero con hélice giratoria ----
+  g.add(box(1.0, 0.85, 1.5, darkM, 0, 1.85, 3.35));
+  g.add(box(1.06, 0.3, 1.56, accent, 0, 2.32, 3.35));
+  const prop = new THREE.Group();
+  prop.name = "prop";
+  const blade1 = box(0.2, 3.0, 0.07, darkM, 0, 0, 0);
+  const blade2 = box(0.2, 3.0, 0.07, darkM, 0, 0, 0);
+  blade2.rotation.z = Math.PI / 2;
+  prop.add(blade1);
+  prop.add(blade2);
+  const spinner = new THREE.Mesh(new THREE.ConeGeometry(0.3, 0.7, 8), accent);
+  spinner.rotation.x = Math.PI / 2;
+  spinner.position.z = 0.3;
+  prop.add(spinner);
+  prop.position.set(0, 1.85, 4.25);
+  g.add(prop);
+
+  // ---- flotadores gemelos y plataforma de aterrizaje adaptativa ----
+  const floatX = folded ? 0.9 : 1.55;
+  const floatY = folded ? -0.75 : -1.15;
+  for (const s of [-1, 1]) {
+    const fl = new THREE.Mesh(new THREE.CapsuleGeometry(0.34, 4.6, 4, 8), M.hullDark);
+    fl.rotation.x = Math.PI / 2;
+    fl.position.set(s * floatX, floatY, 0.3);
+    g.add(fl);
+    const tipUp = new THREE.Mesh(new THREE.ConeGeometry(0.34, 0.9, 8), M.hullDark);
+    tipUp.rotation.x = -1.1;
+    tipUp.position.set(s * floatX, floatY + 0.3, 2.9);
+    g.add(tipUp);
+    g.add(box(0.5, 0.12, 0.9, accent, s * floatX, floatY + 0.4, 1.2));
+    g.add(box(0.14, 1.05, 0.14, M.steel, s * floatX * 0.72, floatY + 0.85, 1.4));
+    g.add(box(0.14, 1.05, 0.14, M.steel, s * floatX * 0.72, floatY + 0.85, -1.0));
+  }
+  if (!folded) {
+    g.add(box(2.5, 0.1, 3.6, M.deckSteel, 0, floatY + 0.52, 0.2));
+    g.add(box(2.56, 0.16, 0.5, accent, 0, floatY + 0.52, 1.95));
+    // flaps de agua adaptables: se abren para asentar el amerizaje
+    const flareFlaps = new THREE.Group();
+    flareFlaps.name = "flareFlaps";
+    flareFlaps.position.set(0, floatY + 0.1, -2.1);
+    for (const s of [-1, 1]) {
+      flareFlaps.add(box(0.6, 0.06, 1.0, accent, s * floatX, 0, -0.45));
+    }
+    flareFlaps.add(box(2.2, 0.06, 0.8, darkM, 0, 0.1, -0.4));
+    g.add(flareFlaps);
+  }
   return g;
 }
 
