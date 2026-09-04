@@ -111,30 +111,26 @@ function drawBlueprint(cv: HTMLCanvasElement, id: CraftId) {
     label("1 PISO CORTO", 150, 92);
     label("FIJACIÓN MANUAL · 5 km", 118, 156);
   } else if (id === "bala") {
-    // casco: popa gorda que se afina hacia la proa
-    poly([[96, 116], [266, 116], [330, 122], [306, 134], [272, 140], [96, 140]]);
+    // casco fino y largo
+    poly([[56, 120], [266, 120], [330, 125], [304, 136], [56, 136]]);
     // cabina cerrada aerodinámica
-    poly([[196, 116], [216, 100], [262, 100], [276, 116]]);
-    ctx.beginPath(); ctx.moveTo(222, 104); ctx.lineTo(258, 104); ctx.stroke();
+    poly([[196, 120], [216, 104], [262, 104], [276, 120]]);
+    ctx.beginPath(); ctx.moveTo(222, 108); ctx.lineTo(258, 108); ctx.stroke();
     // aletín trasero
-    ctx.beginPath(); ctx.moveTo(104, 102); ctx.lineTo(140, 102); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(116, 116); ctx.lineTo(112, 102); ctx.moveTo(132, 116); ctx.lineTo(136, 102); ctx.stroke();
-    // paracaídas en proa (cúpula + suspentes)
-    ctx.beginPath(); ctx.arc(288, 78, 15, Math.PI, 0); ctx.stroke();
-    for (let i = 0; i <= 4; i++) {
-      const x = 273 + i * 7.5;
-      ctx.beginPath(); ctx.moveTo(x, 78); ctx.lineTo(288, 62); ctx.stroke();
-    }
-    ctx.beginPath(); ctx.moveTo(275, 78); ctx.lineTo(277, 100); ctx.moveTo(301, 78); ctx.lineTo(299, 100); ctx.stroke();
-    // soporte + planeador plegado
-    ctx.beginPath(); ctx.moveTo(158, 116); ctx.lineTo(158, 92); ctx.moveTo(186, 116); ctx.lineTo(186, 92); ctx.stroke();
-    poly([[150, 84], [194, 84], [187, 92], [157, 92]]);
-    ctx.beginPath(); ctx.moveTo(142, 88); ctx.lineTo(202, 88); ctx.stroke();
-    // 15 motores en popa (5×3)
-    for (let r = 0; r < 3; r++) for (let c = 0; c < 5; c++) rect(24 + c * 14, 120 + r * 8, 11, 6);
-    label("15 MOTORES", 18, 110);
-    label("PARACAÍDAS", 258, 52);
-    label("POPA ANCHA · PROA FINA", 130, 158);
+    ctx.beginPath(); ctx.moveTo(72, 106); ctx.lineTo(104, 106); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(84, 120); ctx.lineTo(80, 106); ctx.moveTo(98, 120); ctx.lineTo(102, 106); ctx.stroke();
+    // soporte + planeador plegado arriba
+    ctx.beginPath(); ctx.moveTo(128, 120); ctx.lineTo(128, 96); ctx.moveTo(158, 120); ctx.lineTo(158, 96); ctx.stroke();
+    poly([[118, 88], [168, 88], [160, 96], [126, 96]]);
+    ctx.beginPath(); ctx.moveTo(108, 92); ctx.lineTo(178, 92); ctx.stroke();
+    // motor grande único
+    rect(38, 136, 16, 16);
+    // torreta
+    ctx.beginPath(); ctx.arc(288, 112, 6, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(294, 112); ctx.lineTo(316, 108); ctx.stroke();
+    label("PLANEADOR", 100, 80);
+    label("M2", 288, 100);
+    label("540 NUDOS + PLANEADOR", 108, 156);
   } else {
     ctx.beginPath(); ctx.ellipse(182, 146, 118, 17, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     ctx.beginPath(); ctx.ellipse(300, 146, 16, 12, 0, 0, Math.PI * 2); ctx.stroke();
