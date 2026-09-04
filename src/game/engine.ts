@@ -631,6 +631,7 @@ export class Game {
     this.updateMissiles(dt);
     this.updateDarts(dt);
     this.updateHyperMissiles(dt);
+    this.updateGuidedShells(dt);
     this.updatePoliceForces(dt);
     this.updateEnemyMissiles(dt);
     this.updateWanted(dt);
@@ -1102,6 +1103,7 @@ export class Game {
 
   private playerPosWorld(): THREE.Vector3 {
     if (this.mode === "jet" && this.jet) return this.jet.pos.clone();
+    if (this.mode === "glider" && this.glider) return this.glider.pos.clone();
     if (this.mode === "captain" && this.captainShip) return this.captainShip.rig.group.position.clone();
     if (this.mode === "board" && this.boardShip) return this.boardShip.rig.group.position.clone();
     return this.craft.group.position.clone();
@@ -2684,6 +2686,18 @@ export class Game {
       targetPos.copy(j.pos).addScaledVector(fwd, -dist).add(new THREE.Vector3(0, height, 0));
       lookAt.copy(j.pos).addScaledVector(fwd, 50 + spd * 60);
       this.camRoll = j.roll * 0.55;
+    } else if (this.mode === "glider" && this.glider) {
+      // cámara de persecución del planeador
+      const gl = this.glider;
+      const cp = Math.cos(gl.pitch);
+      const fwd = new THREE.Vector3(Math.sin(gl.heading) * cp, Math.sin(gl.pitch) * 0.5, Math.cos(gl.heading) * cp).normalize();
+      const spd = clamp(gl.speed / 175, 0, 1);
+      const dist = this.zoom ? 30 : 12 + spd * 12;
+      const height = this.zoom ? 9 : 4.5 + spd * 3.5;
+      targetPos.copy(gl.pos).addScaledVector(fwd, -dist).add(new THREE.Vector3(0, height, 0));
+      targetPos.y = Math.max(targetPos.y, waveH(targetPos.x, targetPos.z, this.t) + 1.5);
+      lookAt.copy(gl.pos).addScaledVector(fwd, 45 + spd * 30);
+      this.camRoll = 0;
     } else {
       const m = this.captainShip!;
       const bridgeW = this.toWorld(m, m.rig.deck.bridgeLocal);
