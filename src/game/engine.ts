@@ -707,8 +707,9 @@ export class Game {
       const hS = waveH(pos.x + side.x * e, pos.z + side.z * e, this.t);
       // la proa se levanta al planear: más velocidad, más morro arriba
       const spdK = clamp(Math.abs(this.speed) / def.topSpeed, 0, 1);
-      const liftK = this.craftId === "fantasma" ? 0.2 : this.craftId === "viuda" ? 0.16 : 0.06;
-      const planing = Math.pow(spdK, 1.5) * liftK;
+      const liftK = this.craftId === "fantasma" ? 0.2 : this.craftId === "viuda" ? 0.55 : 0.06;
+      const powK = this.craftId === "viuda" ? 2.0 : 1.5;
+      const planing = Math.pow(spdK, powK) * liftK;
       const wavePitch = Math.atan2(hC - hF, e) * 0.8;
       // casco planeador: cuanto más rápido va, menos puede hundirse la proa
       this.craft.group.rotation.x = Math.max(wavePitch - planing, -0.1 + spdK * 0.22);
