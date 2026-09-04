@@ -1702,21 +1702,23 @@ export class Game {
           this.spawnP(gl.pos.clone().add(new THREE.Vector3(0, -1.2, 0)), new THREE.Vector3(rand(-0.6, 0.6), rand(-2, -0.5), rand(-0.6, 0.6)), 0.6, 0.8, 2.4, 0xe8f6f6, 0.5, 0.4, true);
         }
       } else {
-        // planeo sin motor: la gravedad hace el trabajo
+        // planeo sin motor: controles suaves con auto-nivelado (vuela recto solo)
         let pit = 0;
         if (k.has("KeyW")) pit -= 1; // morro abajo: gana velocidad
         if (k.has("KeyS")) pit += 1; // morro arriba: frena y gana altura
-        gl.pitch = clamp(gl.pitch + pit * dt * 1.1, -0.6, 0.5);
+        gl.pitch = clamp(gl.pitch + pit * dt * 0.95, -0.45, 0.42);
+        if (pit === 0) gl.pitch = lerp(gl.pitch, 0, dt * 0.6); // se nivela solo
       }
-      if (k.has("KeyA")) gl.heading += dt * 1.5;
-      if (k.has("KeyD")) gl.heading -= dt * 1.5;
-      gl.speed += -Math.sin(gl.pitch) * 30 * dt - 1.6 * dt - gl.speed * 0.012 * dt;
-      gl.speed = clamp(gl.speed, 13, 175);
-      // pérdida: sin velocidad el morro cae solo
-      if (gl.speed < 20 && gl.pitch > 0.15) gl.pitch = Math.max(-0.2, gl.pitch - dt * 1.4);
+      if (k.has("KeyA")) gl.heading += dt * 1.2;
+      if (k.has("KeyD")) gl.heading -= dt * 1.2;
+      // intercambio de energía: morro arriba frena y sube, morro abajo acelera
+      gl.speed += (-Math.sin(gl.pitch) * gl.speed * 0.14 - 0.45 - gl.speed * 0.003) * dt;
+      gl.speed = clamp(gl.speed, 16, 250);
+      // pérdida suave: por debajo de 24 m/s el morro baja con dulzura, no en picado
+      if (gl.speed < 24 && gl.pitch > 0) gl.pitch = Math.max(0, gl.pitch - dt * 0.9);
       const v = new THREE.Vector3(Math.sin(gl.heading) * Math.cos(gl.pitch), Math.sin(gl.pitch), Math.cos(gl.heading) * Math.cos(gl.pitch));
       gl.pos.addScaledVector(v, gl.speed * dt);
-      gl.pos.y -= 2.0 * dt; // descenso natural del planeo
+      gl.pos.y -= 0.35 * dt; // alas anchas: descenso mínimo en vuelo nivelado
       gl.group.position.copy(gl.pos);
       gl.group.rotation.y = gl.heading;
       gl.group.rotation.x = -gl.pitch;
