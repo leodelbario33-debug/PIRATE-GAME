@@ -28,17 +28,17 @@ The Kraken – monstrous power from the depths.
 Lightning 360 – speed demon with electrifying turns.
 
 
-The Ballista – heavy firepower, built for destruction.
+The Ballista – heavy firepower, built for destruction and power.
 
 
-Bullet – small but lethal, perfect for quick strikes.
+Bullet – small but lethal, perfect for quick strikes and fast scaping moments.
 
 
 
 # 💣 What you’ll do:
 
 
-Rob banks and stash loot.
+Rob ships and stash loot.
 
 
 Escape police chases in high‑speed narcolanchas.
@@ -47,6 +47,6 @@ Escape police chases in high‑speed narcolanchas.
 Collect weapons scattered across the map.
 
 
-Fight rival pirates and dominate the seas.
+Fight rival pirates and big ships and dominate the seas.
 
 Just pure pirate madness, epic battles, and endless fun.
