@@ -152,7 +152,7 @@ export const CRAFTS: Record<CraftId, CraftDef> = {
     desc: "Un proyectil sobre el agua. A 400 NUDOS pulsas 1 y el PLANEADOR sale disparado de su soporte: planea sin motor durante mucho tiempo, ameriza cuando quieras y despliega su motora para volver. Cerca de la BALA, pulsa 2 y se aparca bajo el casco.",
     glider: true,
     topSpeed: 224,
-    accel: 18,
+    accel: 8.5,
     turn: 2.6,
     hull: 85,
     weaponName: "M2 DE PROA",

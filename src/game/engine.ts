@@ -52,7 +52,7 @@ interface HyperMissile {
   radius: number;
 }
 interface Missile { mesh: THREE.Group; start: THREE.Vector3; end: THREE.Vector3; t: number; dur: number; arc: number; }
-interface GliderEnt { group: THREE.Group; pos: THREE.Vector3; heading: number; pitch: number; speed: number; state: "air" | "water"; motorT: number; boostT: number; }
+interface GliderEnt { group: THREE.Group; pos: THREE.Vector3; heading: number; pitch: number; speed: number; state: "air" | "water"; motorT: number; boostT: number; boostSpeed: number; }
 interface GuidedShell { mesh: THREE.Group; vel: THREE.Vector3; speed: number; life: number; smokeT: number; target: Merchant; }
 interface Particle {
   s: THREE.Sprite; vel: THREE.Vector3; life: number; maxLife: number;
@@ -182,6 +182,9 @@ export class Game {
   // planeador de la BALA
   private glider: GliderEnt | null = null;
   private gliderCool = 0;
+  // cubierta aerodinámica de la BALA
+  private canopyDeployed = false;
+  private canopySustain = 0;
 
   // batería de largo alcance de la BALISTA
   private guidedLeft = 0;
@@ -700,6 +703,29 @@ export class Game {
       }
     }
 
+    // BALA: cubierta aerodinámica — se desplaga sosteniendo más de 300 nudos y se recoge al bajar de 210
+    if (def.id === "bala") {
+      const kn = Math.abs(this.speed) * 1.9438;
+      if (!this.canopyDeployed) {
+        if (kn > 300 && this.throttle > 0.5) this.canopySustain += dt;
+        else this.canopySustain = Math.max(0, this.canopySustain - dt * 1.5);
+        if (this.canopySustain > 1.6) {
+          this.canopyDeployed = true;
+          this.canopySustain = 0;
+          const c = this.craft.group.getObjectByName("aeroCanopy");
+          if (c) c.visible = true;
+          this.sfx.gearSfx();
+          this.pushMsg("CUBIERTA AERODINÁMICA DESPLEGADA — más estable, proa arriba y lanzamiento del planeador más rápido", "good");
+        }
+      } else if (kn < 210) {
+        this.canopyDeployed = false;
+        const c = this.craft.group.getObjectByName("aeroCanopy");
+        if (c) c.visible = false;
+        this.sfx.gearSfx();
+        this.pushMsg("Cubierta aerodinámica recogida: giro completo disponible", "info");
+      }
+    }
+
     // BALISTA: batería de largo alcance con fijación manual
     if (def.guided) {
       if (this.pressed.has("Digit1")) {
@@ -727,7 +753,9 @@ export class Game {
     this.speed = lerp(this.speed, target, dt * (def.accel / 10) * 2.4);
     const turnIn = (k.has("KeyA") || k.has("ArrowLeft") ? 1 : 0) - (k.has("KeyD") || k.has("ArrowRight") ? 1 : 0);
     const speedFactor = clamp(Math.abs(this.speed) / 6, 0.25, 1);
-    this.heading += turnIn * def.turn * speedFactor * dt * Math.sign(this.speed >= 0 ? 1 : -1);
+    // con la cubierta aerodinámica desplegada la BALA es más estable y gira menos
+    const turnMul = this.canopyDeployed ? 0.55 : 1;
+    this.heading += turnIn * def.turn * speedFactor * turnMul * dt * Math.sign(this.speed >= 0 ? 1 : -1);
 
     const fwd = new THREE.Vector3(Math.sin(this.heading), 0, Math.cos(this.heading));
     const pos = this.craft.group.position;
@@ -758,7 +786,7 @@ export class Game {
       const hS = waveH(pos.x + side.x * e, pos.z + side.z * e, this.t);
       // la proa se levanta al planear: suave, acotada y sin inversiones bruscas
       const spdK = clamp(Math.abs(this.speed) / def.topSpeed, 0, 1);
-      const liftK = this.craftId === "fantasma" ? 0.2 : this.craftId === "viuda" ? 0.17 : this.craftId === "kraken" ? 0.03 : 0.13;
+      const liftK = this.craftId === "fantasma" ? 0.2 : this.craftId === "viuda" ? 0.17 : this.craftId === "kraken" ? 0.03 : this.craftId === "bala" ? (this.canopyDeployed ? 0.32 : 0.13) : 0.13;
       const planing = Math.pow(spdK, 1.7) * liftK;
       const wavePitch = Math.atan2(hC - hF, e) * 0.5;
       // límites: nunca más de ~14° arriba y casi nada abajo a velocidad
@@ -1678,7 +1706,13 @@ export class Game {
     this.scene.add(g);
     const p = this.craft.group.position.clone().add(new THREE.Vector3(0, 4, 0));
     // salida disparada: sube a más de 450 nudos (~240 m/s) y luego decae al planeo
-    this.glider = { group: g, pos: p, heading: this.heading, pitch: 0.68, speed: 120, state: "air", motorT: 1, boostT: 2.4 };
+    // con la cubierta aerodinámica desplegada sale con mucha más velocidad
+    const boosted = this.canopyDeployed;
+    this.glider = {
+      group: g, pos: p, heading: this.heading, pitch: 0.68,
+      speed: boosted ? 175 : 120, state: "air", motorT: 1,
+      boostT: boosted ? 3.0 : 2.4, boostSpeed: boosted ? 295 : 242,
+    };
     const rack = this.craft.group.getObjectByName("rackGlider");
     if (rack) rack.visible = false;
     this.mode = "glider";
@@ -1696,7 +1730,7 @@ export class Game {
       if (gl.boostT > 0) {
         // fase de lanzamiento: trepa disparado por encima de 450 nudos
         gl.boostT -= dt;
-        gl.speed = lerp(gl.speed, 242, dt * 2.5);
+        gl.speed = lerp(gl.speed, gl.boostSpeed, dt * 2.5);
         gl.pitch = lerp(gl.pitch, 0.62, dt * 3.4);
         if (Math.random() < 0.8) {
           this.spawnP(gl.pos.clone().add(new THREE.Vector3(0, -1.2, 0)), new THREE.Vector3(rand(-0.6, 0.6), rand(-2, -0.5), rand(-0.6, 0.6)), 0.6, 0.8, 2.4, 0xe8f6f6, 0.5, 0.4, true);

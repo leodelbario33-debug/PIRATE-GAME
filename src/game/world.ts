@@ -485,6 +485,19 @@ export function buildBullet(def: CraftDef): PlayerRig {
   // aletín trasero
   g.add(box(0.16, 1.1, 2.4, M.hullDark, 0, 1.6, -7.6));
   g.add(box(2.4, 0.1, 1.1, M.orange, 0, 2.15, -7.6));
+  // cubierta aerodinámica trasera: se despliega a alta velocidad (oculta al inicio)
+  const canopy = new THREE.Group();
+  canopy.name = "aeroCanopy";
+  canopy.add(box(2.9, 0.16, 6.6, M.hullDark, 0, 1.3, -3.4));
+  const ramp = box(2.9, 0.14, 3.4, M.orange, 0, 0.92, -7.1);
+  ramp.rotation.x = 0.42;
+  canopy.add(ramp);
+  canopy.add(box(0.22, 0.85, 0.22, M.steel, -1.2, 0.85, -1.6));
+  canopy.add(box(0.22, 0.85, 0.22, M.steel, 1.2, 0.85, -1.6));
+  canopy.add(box(0.22, 0.85, 0.22, M.steel, -1.2, 0.85, -5.2));
+  canopy.add(box(0.22, 0.85, 0.22, M.steel, 1.2, 0.85, -5.2));
+  canopy.visible = false;
+  g.add(canopy);
   // soporte + planeador plegado arriba (se oculta al lanzarlo)
   g.add(box(0.3, 1.0, 0.3, M.steel, -0.9, 1.6, -2.2));
   g.add(box(0.3, 1.0, 0.3, M.steel, 0.9, 1.6, -2.2));
