@@ -179,9 +179,10 @@ export class Game {
   private hyperCool = 0;
   private hyperMissiles: HyperMissile[] = [];
 
-  // planeador de la BALA
+  // avioneta de la BALA
   private glider: GliderEnt | null = null;
   private gliderCool = 0;
+  private flareMsg = false;
   // cubierta aerodinámica de la BALA
   private canopyDeployed = false;
   private canopySustain = 0;
@@ -1718,7 +1719,7 @@ export class Game {
     this.mode = "glider";
     this.gliderCool = 0;
     this.sfx.takeoff();
-    this.pushMsg("¡PLANEADOR LANZADO! W/S cabear · A/D girar · ameriza cuando quieras", "good");
+    this.pushMsg("¡AVIONETA LANZADA! W/S cabear · A/D girar · ameriza y acelera a 120 nudos para despegar", "good");
   }
 
   private updateGlider(dt: number) {
@@ -1745,60 +1746,94 @@ export class Game {
       }
       if (k.has("KeyA")) gl.heading += dt * 1.2;
       if (k.has("KeyD")) gl.heading -= dt * 1.2;
-      // intercambio de energía: morro arriba frena y sube, morro abajo acelera
-      gl.speed += (-Math.sin(gl.pitch) * gl.speed * 0.14 - 0.45 - gl.speed * 0.003) * dt;
+      // motor de hélice: mantiene el crucero para que la avioneta no caiga nunca
+      const thrust = gl.speed < 46 ? (46 - gl.speed) * 0.4 : 0;
+      gl.speed += (-Math.sin(gl.pitch) * gl.speed * 0.14 - 0.35 + thrust - gl.speed * 0.002) * dt;
       gl.speed = clamp(gl.speed, 16, 250);
       // pérdida suave: por debajo de 24 m/s el morro baja con dulzura, no en picado
       if (gl.speed < 24 && gl.pitch > 0) gl.pitch = Math.max(0, gl.pitch - dt * 0.9);
       const v = new THREE.Vector3(Math.sin(gl.heading) * Math.cos(gl.pitch), Math.sin(gl.pitch), Math.cos(gl.heading) * Math.cos(gl.pitch));
       gl.pos.addScaledVector(v, gl.speed * dt);
-      gl.pos.y -= 0.35 * dt; // alas anchas: descenso mínimo en vuelo nivelado
+      gl.pos.y -= 0.18 * dt; // con motor: descenso mínimo en vuelo nivelado
+      // ---- plataforma de aterrizaje adaptativa: auto-flare cerca del agua ----
+      const seaY = waveH(gl.pos.x, gl.pos.z, this.t);
+      const alt = gl.pos.y - seaY;
+      const vy = Math.sin(gl.pitch) * gl.speed - 0.18;
+      const deploying = alt < 12 && vy < -1.2;
+      const flaps = gl.group.getObjectByName("flareFlaps");
+      if (flaps) flaps.rotation.x = lerp(flaps.rotation.x, deploying ? -0.9 : 0, dt * 3.2);
+      if (deploying) {
+        gl.pitch = lerp(gl.pitch, 0.04, dt * 1.7); // la plataforma nivela la avioneta sola
+        gl.pos.y = Math.max(gl.pos.y - 2.3 * dt, seaY + 0.6); // limita el hundimiento: aterrizaje fácil
+        if (!this.flareMsg) { this.flareMsg = true; this.pushMsg("PLATAFORMA DE ATERRIZAJE ADAPTADA — descenso asistido", "info"); }
+      } else if (alt > 16) {
+        this.flareMsg = false;
+      }
       gl.group.position.copy(gl.pos);
       gl.group.rotation.y = gl.heading;
       gl.group.rotation.x = -gl.pitch;
+      const prop = gl.group.getObjectByName("prop");
+      if (prop) prop.rotation.z += dt * (14 + gl.speed * 0.35);
       // estela blanca de velocidad
       if (gl.speed > 60 && Math.random() < 0.5) {
         this.spawnP(gl.pos.clone().add(new THREE.Vector3(0, -0.4, 0)), new THREE.Vector3(rand(-0.4, 0.4), 0, rand(-0.4, 0.4)), 0.3, 0.5, 1.6, 0xdff2f5, 0.35, 0, true);
       }
-      const seaY = waveH(gl.pos.x, gl.pos.z, this.t);
       if (gl.pos.y <= seaY + 0.6) {
-        // amerizaje: se despliega la motora
+        // amerizaje suave gracias a la plataforma adaptativa
         gl.state = "water";
         gl.pos.y = seaY + 0.55;
         gl.pitch = 0;
-        gl.speed *= 0.45;
+        gl.speed *= 0.62;
+        gl.motorT = 1;
         this.splash(gl.pos.clone(), 1.5);
         this.sfx.splashDown();
-        this.pushMsg("AMERIZAJE — motora desplegada. Vuelve a la BALA y pulsa 2 cerca para aparcar", "info");
+        this.pushMsg("AMERIZAJE SUAVE — acelera con W: despegue automático a 120 NUDOS", "info");
       }
     } else {
-      // en el agua con la motora desplegada
+      // ---- en el agua: motor de la avioneta y despegue automático a 120 nudos ----
       let th = 0;
       if (k.has("KeyW")) th = 1;
-      if (k.has("KeyS")) th = -0.55;
+      if (k.has("KeyS")) th = -1;
       if (k.has("KeyA")) gl.heading += dt * 1.9 * (0.4 + Math.min(1, gl.speed / 20));
       if (k.has("KeyD")) gl.heading -= dt * 1.9 * (0.4 + Math.min(1, gl.speed / 20));
-      if (gl.motorT > 0) {
-        gl.motorT -= dt * (th > 0 ? 1 / 26 : 0.25 / 26);
-        gl.speed = lerp(gl.speed, th * 46, dt * 1.1);
-        if (gl.motorT <= 0) { gl.motorT = 0; this.pushMsg("La motora se quedó sin combustible: deriva...", "warn"); }
-      } else {
-        gl.speed = lerp(gl.speed, th > 0 ? 5 : 0, dt * 0.5);
-      }
+      gl.motorT = clamp(gl.motorT - dt * (th > 0 ? 1 / 90 : 1 / 240), 0.3, 1);
+      if (th > 0) gl.speed += 4.2 * dt; // ≈15 s de 0 a 120 nudos
+      else if (th < 0) gl.speed = Math.max(0, gl.speed - 7 * dt);
+      else gl.speed = lerp(gl.speed, 0, dt * 0.35);
+      gl.speed = clamp(gl.speed, 0, 66);
+      const flaps = gl.group.getObjectByName("flareFlaps");
+      if (flaps) flaps.rotation.x = lerp(flaps.rotation.x, -0.9, dt * 2.5);
       const v = new THREE.Vector3(Math.sin(gl.heading), 0, Math.cos(gl.heading));
       gl.pos.addScaledVector(v, gl.speed * dt);
       gl.pos.y = waveH(gl.pos.x, gl.pos.z, this.t) + 0.55;
       gl.group.position.copy(gl.pos);
       gl.group.rotation.y = gl.heading;
-      gl.group.rotation.x = Math.atan2(waveH(gl.pos.x, gl.pos.z, this.t) - waveH(gl.pos.x + v.x * 2, gl.pos.z + v.z * 2, this.t), 2) * 0.7;
+      const bowUp = clamp(gl.speed * 0.004, 0, 0.16); // planea y levanta el morro al acelerar
+      gl.group.rotation.x = Math.atan2(waveH(gl.pos.x, gl.pos.z, this.t) - waveH(gl.pos.x + v.x * 2, gl.pos.z + v.z * 2, this.t), 2) * 0.7 - bowUp;
+      const prop = gl.group.getObjectByName("prop");
+      if (prop) prop.rotation.z += dt * (8 + gl.speed * 0.9);
       if (Math.abs(gl.speed) > 6 && Math.random() < 0.6) {
         this.spawnP(gl.pos.clone().addScaledVector(v, -2.4), new THREE.Vector3(rand(-1, 1), rand(0.5, 1.5), rand(-1, 1)), 0.5, 0.9, 1.8, 0xe8f6f6, 0.45, 0.5, true);
       }
+      // despegue automático al alcanzar 120 nudos (61,7 m/s)
+      if (gl.speed >= 61.7) {
+        gl.state = "air";
+        gl.pitch = 0.3;
+        this.splash(gl.pos.clone().add(new THREE.Vector3(0, 0.4, 0)), 1.4);
+        this.sfx.takeoff();
+        this.pushMsg("¡ROTACIÓN Y DESPEGUE! 120 NUDOS alcanzados", "good");
+      }
     }
-    // aparcar bajo la BALA
+    // aparcar bajo la BALA / pista de despegue
     const dShip = gl.pos.distanceTo(this.craft.group.position);
-    this.canInteract = dShip < 46 ? "PULSA 2 — APARCAR EL PLANEADOR BAJO LA BALA" : null;
-    if (dShip < 46 && this.pressed.has("Digit2")) this.parkGlider();
+    if (dShip < 46) {
+      this.canInteract = "PULSA 2 — APARCAR LA AVIONETA BAJO LA BALA";
+      if (this.pressed.has("Digit2")) this.parkGlider();
+    } else if (gl.state === "water" && gl.speed < 61.7) {
+      this.canInteract = `ACELERA CON W — DESPEGUE A 120 NUDOS (${Math.round(gl.speed * 1.9438)}/120)`;
+    } else {
+      this.canInteract = null;
+    }
   }
 
   private parkGlider() {
