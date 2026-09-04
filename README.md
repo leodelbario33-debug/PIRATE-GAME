@@ -35,7 +35,7 @@ Bullet – small but lethal, perfect for quick strikes.
 
 
 
-💣 What you’ll do:
+# 💣 What you’ll do:
 
 
 Rob banks and stash loot.
