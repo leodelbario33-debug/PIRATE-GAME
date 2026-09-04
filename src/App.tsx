@@ -17,6 +17,7 @@ const DEFAULT_HUD: HudData = {
   aimRange: -1, aimTarget: "", gear: true, alt: 0, jetsLeft: 3, missileWarn: null,
   hypers: 0, hypersMax: 0,
   lockMode: 0, lockValid: false, lockName: "", lockDist: 0, guided: 0, guidedMax: 0,
+  gliderState: "none", gliderMotor: 0, gliderAlt: 0, gliderCool: 0,
 };
 
 export default function App() {

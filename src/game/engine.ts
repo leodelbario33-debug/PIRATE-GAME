@@ -53,6 +53,7 @@ interface HyperMissile {
 }
 interface Missile { mesh: THREE.Group; start: THREE.Vector3; end: THREE.Vector3; t: number; dur: number; arc: number; }
 interface GliderEnt { group: THREE.Group; pos: THREE.Vector3; heading: number; pitch: number; speed: number; state: "air" | "water"; motorT: number; }
+interface GuidedShell { mesh: THREE.Group; vel: THREE.Vector3; speed: number; life: number; smokeT: number; target: Merchant; }
 interface Particle {
   s: THREE.Sprite; vel: THREE.Vector3; life: number; maxLife: number;
   s0: number; s1: number; grav: number; op: number;
@@ -182,6 +183,13 @@ export class Game {
   private glider: GliderEnt | null = null;
   private gliderCool = 0;
 
+  // batería de largo alcance de la BALISTA
+  private guidedLeft = 0;
+  private lockMode = 0; // 0 normal · 1 puntería · 2 velocidad
+  private lockShip: Merchant | null = null;
+  private lockSpeed = 1;
+  private guidedShells: GuidedShell[] = [];
+
   // cuerda de abordaje (visible en la zona ciega)
   private ropeGeo = new THREE.BufferGeometry();
   private ropeLine: THREE.Line;
@@ -191,6 +199,7 @@ export class Game {
   private keys = new Set<string>();
   private pressed = new Set<string>();
   private firing = false;
+  private mouseClick = false;
 
   constructor(canvas: HTMLCanvasElement, craftId: CraftId, cb: GameCallbacks) {
     this.canvas = canvas;
@@ -202,6 +211,7 @@ export class Game {
     this.torps = def.torpedoes;
     this.missiles = def.missiles;
     this.hypers = def.hypers ?? 0;
+    this.guidedLeft = def.guided ?? 0;
 
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
@@ -417,7 +427,7 @@ export class Game {
     this.lookPitch = clamp(this.lookPitch - e.movementY * 0.002, -0.55, 0.62);
   };
   private onMouseDown = (e: MouseEvent) => {
-    if (e.button === 0) this.firing = true;
+    if (e.button === 0) { this.firing = true; this.mouseClick = true; }
     if (e.button === 2) this.zoom = true;
   };
   private onMouseUp = (e: MouseEvent) => {
@@ -676,6 +686,39 @@ export class Game {
       else if (this.hypers <= 0) {
         this.pushMsg("Sin proyectiles hipersónicos. Reabastece vendiendo mercancía.", "warn");
         this.sfx.empty();
+      }
+    }
+
+    // BALA: lanzar el planeador con 1 al superar 400 nudos
+    this.gliderCool -= dt;
+    if (this.pressed.has("Digit1") && def.glider) {
+      const kn = Math.abs(this.speed) * 1.9438;
+      if (!this.glider && this.gliderCool <= 0) {
+        if (kn >= 400) this.launchGlider();
+        else this.pushMsg(`El planeador necesita 400 NUDOS de lanzamiento (vas a ${Math.round(kn)})`, "warn");
+      }
+    }
+
+    // BALISTA: batería de largo alcance con fijación manual
+    if (def.guided) {
+      if (this.pressed.has("Digit1")) {
+        if (this.lockMode === 0) {
+          if (this.guidedLeft > 0) { this.lockMode = 1; this.pushMsg("MODO PUNTERÍA: coloca la mira sobre el CASCO y pulsa CLIC para fijar", "info"); this.sfx.uiClick(); }
+          else { this.pushMsg("Batería vacía. Reabastece vendiendo mercancía.", "warn"); this.sfx.empty(); }
+        } else if (this.lockMode === 1) { this.lockMode = 0; this.lockShip = null; }
+        else { this.lockSpeed = 1; this.fireGuidedShell(); }
+      }
+      if (this.lockMode === 2 && this.pressed.has("Digit2")) { this.lockSpeed = 2; this.fireGuidedShell(); }
+      if (this.lockMode === 2 && this.pressed.has("Digit3")) { this.lockSpeed = 3; this.fireGuidedShell(); }
+      // fijar con clic durante la puntería (solo barcos, nunca aviones)
+      if (this.lockMode === 1 && this.mouseClick) {
+        const cand = this.findLockTarget();
+        if (cand) {
+          this.lockShip = cand.m;
+          this.lockMode = 2;
+          this.sfx.sonar();
+          this.pushMsg(`OBJETIVO FIJADO: ${cand.m.name} a ${(cand.dist / 1000).toFixed(1)} km — elige velocidad: 1 lenta · 2 media · 3 hiperrápida`, "good");
+        }
       }
     }
     const boost = k.has("ShiftLeft") && !def.submarine ? 1.22 : 1;
@@ -1722,6 +1765,93 @@ export class Game {
     this.pushMsg("PLANEADOR APARCADO bajo la BALA. Se prepara para el próximo lanzamiento...", "good");
   }
 
+  // ------------------------------------------------------------- batería BALISTA
+  private findLockTarget(): { m: Merchant; dist: number } | null {
+    const dirv = this.camDir();
+    const cp = this.camera.position;
+    let best: { m: Merchant; dist: number } | null = null;
+    for (const m of this.merchants) {
+      if (m.state === "sinking" || m.state === "sold") continue;
+      const p = m.rig.group.position.clone(); p.y = 7;
+      const to = p.sub(cp);
+      const dist = to.length();
+      if (dist < 20 || dist > 5200) continue;
+      const ang = Math.acos(clamp(to.normalize().dot(dirv), -1, 1));
+      if (ang < 0.09 && (!best || dist < best.dist)) best = { m, dist };
+    }
+    return best;
+  }
+
+  private fireGuidedShell() {
+    if (!this.lockShip || this.guidedLeft <= 0) { this.lockMode = 0; return; }
+    this.guidedLeft--;
+    const speeds = [240, 430, 700];
+    const sp = speeds[this.lockSpeed - 1];
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.5, 4.2, 4, 8), new THREE.MeshStandardMaterial({ color: 0xd8dde2, roughness: 0.4 }));
+    body.rotation.x = Math.PI / 2;
+    g.add(body);
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1.6, 8), new THREE.MeshStandardMaterial({ color: 0xffb347, roughness: 0.4 }));
+    tip.rotation.x = Math.PI / 2;
+    tip.position.z = 2.9;
+    g.add(tip);
+    for (const s of [-1, 1]) {
+      const fin = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.9, 0.7), new THREE.MeshStandardMaterial({ color: 0x39424e, roughness: 0.6 }));
+      fin.position.set(s * 0.42, 0, -1.9);
+      g.add(fin);
+    }
+    const start = new THREE.Vector3();
+    this.craft.bowAnchor.getWorldPosition(start);
+    start.y = Math.max(start.y, 4);
+    const target = this.lockShip.rig.group.position.clone(); target.y = 9;
+    const vel = target.sub(start).normalize().multiplyScalar(sp);
+    g.position.copy(start);
+    this.scene.add(g);
+    this.guidedShells.push({ mesh: g, vel, speed: sp, life: 14, smokeT: 0, target: this.lockShip });
+    this.sfx.jetMissile();
+    this.shake = 0.35;
+    this.pushMsg(`¡PROYECTIL LANZADO A ${sp} m/s hacia ${this.lockShip.name}!`, "good");
+    this.lockMode = 0;
+    this.lockShip = null;
+  }
+
+  private updateGuidedShells(dt: number) {
+    for (const s of this.guidedShells) {
+      s.life -= dt;
+      // vuela directo al barco fijado (y solo a él)
+      if (s.target.state !== "sinking" && s.target.state !== "sold") {
+        const tp = s.target.rig.group.position.clone(); tp.y = 9;
+        const want = tp.sub(s.mesh.position).normalize().multiplyScalar(s.speed);
+        s.vel.lerp(want, clamp(dt * 3.2, 0, 1));
+      }
+      s.mesh.position.addScaledVector(s.vel, dt);
+      s.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), s.vel.clone().normalize());
+      s.smokeT -= dt;
+      if (s.smokeT <= 0) {
+        s.smokeT = 0.02;
+        this.spawnP(s.mesh.position.clone(), new THREE.Vector3(rand(-0.5, 0.5), rand(-0.2, 0.4), rand(-0.5, 0.5)), 0.9, 1.6, 2.6, 0xd8d2c4, 0.5, 0.2, true);
+        this.spawnP(s.mesh.position.clone(), new THREE.Vector3(rand(-1, 1), rand(-0.4, 0.8), rand(-1, 1)), 0.5, 0.8, 1.4, 0xffb27a, 0.6, 0, true);
+      }
+      const hitP = s.target.rig.group.position.clone(); hitP.y = 8;
+      if (s.target.state !== "sinking" && s.target.state !== "sold" && s.mesh.position.distanceTo(hitP) < 16) {
+        this.explosion(s.mesh.position.clone(), 1.5);
+        this.shake = 0.5;
+        s.target.hp -= 240;
+        this.raiseWanted(4);
+        this.alertMerchant(s.target);
+        this.sfx.boom();
+        s.life = 0;
+      } else if (s.mesh.position.y < waveH(s.mesh.position.x, s.mesh.position.z, this.t) + 0.3) {
+        this.splash(s.mesh.position.clone(), 1.3);
+        s.life = 0;
+      }
+    }
+    this.guidedShells = this.guidedShells.filter((s) => {
+      if (s.life <= 0) { this.scene.remove(s.mesh); return false; }
+      return true;
+    });
+  }
+
   private toLocal(m: Merchant, world: THREE.Vector3): THREE.Vector3 {
     const mp = m.rig.group.position;
     const dx = world.x - mp.x, dz = world.z - mp.z;
@@ -2704,6 +2834,20 @@ export class Game {
       missileWarn: this.missileWarn,
       hypers: this.hypers,
       hypersMax: def.hypers ?? 0,
+      lockMode: this.lockMode,
+      lockValid: (() => {
+        if (this.lockMode === 0) return false;
+        if (this.lockMode === 2) return !!this.lockShip;
+        return !!this.findLockTarget();
+      })(),
+      lockName: this.lockShip ? this.lockShip.name : (() => { const c = this.findLockTarget(); return c ? c.m.name : ""; })(),
+      lockDist: this.lockShip ? this.lockShip.rig.group.position.distanceTo(this.craft.group.position) : (() => { const c = this.findLockTarget(); return c ? c.dist : 0; })(),
+      guided: this.guidedLeft,
+      guidedMax: def.guided ?? 0,
+      gliderState: this.mode === "glider" && this.glider ? this.glider.state : this.craftId === "bala" ? (this.gliderCool > 0 ? "none" : "ready") : "none",
+      gliderMotor: this.glider ? this.glider.motorT : 0,
+      gliderAlt: this.glider ? Math.max(0, this.glider.pos.y - waveH(this.glider.pos.x, this.glider.pos.z, this.t)) : 0,
+      gliderCool: this.gliderCool,
     };
     this.cb.onHud(h);
   }

@@ -98,6 +98,39 @@ function drawBlueprint(cv: HTMLCanvasElement, id: CraftId) {
     label("8× 800 HP", 26, 174);
     label("DARDOS RECTOS", 210, 88);
     label("ANCHO 7 m", 150, 170);
+  } else if (id === "balista") {
+    // casco bajo de un piso
+    poly([[62, 118], [272, 118], [316, 124], [300, 138], [62, 138]]);
+    rect(150, 98, 64, 20);
+    ctx.beginPath(); ctx.moveTo(156, 104); ctx.lineTo(208, 104); ctx.stroke();
+    // batería: 4 tubos
+    for (let i = 0; i < 4; i++) { rect(86 + i * 14, 84, 9, 34); ctx.beginPath(); ctx.moveTo(90 + i * 14, 84); ctx.lineTo(90 + i * 14, 78); ctx.stroke(); }
+    // motores
+    rect(44, 138, 12, 15); rect(62, 138, 12, 15);
+    label("BATERÍA ×4", 60, 72);
+    label("1 PISO CORTO", 150, 92);
+    label("FIJACIÓN MANUAL · 5 km", 118, 156);
+  } else if (id === "bala") {
+    // casco fino y largo
+    poly([[56, 120], [266, 120], [330, 125], [304, 136], [56, 136]]);
+    // cabina cerrada aerodinámica
+    poly([[196, 120], [216, 104], [262, 104], [276, 120]]);
+    ctx.beginPath(); ctx.moveTo(222, 108); ctx.lineTo(258, 108); ctx.stroke();
+    // aletín trasero
+    ctx.beginPath(); ctx.moveTo(72, 106); ctx.lineTo(104, 106); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(84, 120); ctx.lineTo(80, 106); ctx.moveTo(98, 120); ctx.lineTo(102, 106); ctx.stroke();
+    // soporte + planeador plegado arriba
+    ctx.beginPath(); ctx.moveTo(128, 120); ctx.lineTo(128, 96); ctx.moveTo(158, 120); ctx.lineTo(158, 96); ctx.stroke();
+    poly([[118, 88], [168, 88], [160, 96], [126, 96]]);
+    ctx.beginPath(); ctx.moveTo(108, 92); ctx.lineTo(178, 92); ctx.stroke();
+    // motor grande único
+    rect(38, 136, 16, 16);
+    // torreta
+    ctx.beginPath(); ctx.arc(288, 112, 6, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(294, 112); ctx.lineTo(316, 108); ctx.stroke();
+    label("PLANEADOR", 100, 80);
+    label("M2", 288, 100);
+    label("540 NUDOS + PLANEADOR", 108, 156);
   } else {
     ctx.beginPath(); ctx.ellipse(182, 146, 118, 17, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     ctx.beginPath(); ctx.ellipse(300, 146, 16, 12, 0, 0, Math.PI * 2); ctx.stroke();
@@ -211,7 +244,7 @@ export default function MenuScreen({ onStart }: { onStart: (id: CraftId) => void
 
         <div className="text-[12px] tracking-[0.35em] text-[#ffb347] hud-title mb-3">— ELIGE TU EMBARCACIÓN —</div>
         <div className="flex flex-wrap gap-4 items-stretch">
-          {(["viuda", "fantasma", "tiburon", "kraken", "rayo"] as CraftId[]).map((id, i) => (
+          {(["viuda", "fantasma", "tiburon", "kraken", "rayo", "balista", "bala"] as CraftId[]).map((id, i) => (
             <CraftCard key={id} id={id} selected={sel === id} onPick={() => setSel(id)} delay={`${i * 0.6}s`} />
           ))}
           <div className="flex-1 min-w-[260px] flex flex-col gap-3">
