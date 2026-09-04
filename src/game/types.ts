@@ -1,4 +1,4 @@
-export type CraftId = "viuda" | "fantasma" | "tiburon" | "kraken" | "rayo";
+export type CraftId = "viuda" | "fantasma" | "tiburon" | "kraken" | "rayo" | "balista";
 
 export interface CraftDef {
   id: CraftId;
@@ -16,6 +16,7 @@ export interface CraftDef {
   missiles: number; // misiles aéreos (arco balístico / aire-aire)
   missileKind?: "arc" | "dart"; // "dart": proyectil recto al punto marcado, sin curva ni guiado
   hypers?: number; // proyectiles hipersónicos guiados (tecla T)
+  guided?: number; // batería de largo alcance con fijación manual (tecla 1)
   jets?: number; // cazas disponibles en cubierta
   submarine: boolean;
   color: string;
@@ -122,6 +123,27 @@ export const CRAFTS: Record<CraftId, CraftDef> = {
     displayKnots: 360,
     stats: { velocidad: 5, viraje: 5, blindaje: 2, potencia: 5 },
   },
+  balista: {
+    id: "balista",
+    name: "BALISTA",
+    cls: "PLATAFORMA DE LANZAMIENTO LARGO ALCANCE",
+    desc: "Perfil furtivo de un solo piso corto. Su batería de 4 proyectiles pesados alcanza cascos a 5 km. Pulsa 1, apunta al casco con la mira, fija con CLIC, elige la velocidad del proyectil en pantalla (1·2·3) y volará directo a ese barco — nunca a aviones ni a nada más.",
+    guided: 4,
+    topSpeed: 14.5,
+    accel: 5.5,
+    turn: 1.25,
+    hull: 70,
+    weaponName: "M60 + BATERÍA ×4",
+    weaponDmg: 7,
+    fireRate: 6,
+    torpedoes: 0,
+    missiles: 0,
+    hypers: 0,
+    submarine: false,
+    color: "#141b24",
+    displayKnots: 28,
+    stats: { velocidad: 2, viraje: 3, blindaje: 2, potencia: 4 },
+  },
 };
 
 export type MerchantKind = "cargo" | "tanker" | "yacht" | "liner";
@@ -167,6 +189,13 @@ export interface HudData {
   missileWarn: { dist: number; angle: number } | null; // misil entrante: distancia y ángulo relativo
   hypers: number; // proyectiles hipersónicos restantes
   hypersMax: number;
+  // batería de largo alcance (BALISTA)
+  lockMode: number; // 0 = normal · 1 = puntería · 2 = velocidad
+  lockValid: boolean;
+  lockName: string;
+  lockDist: number;
+  guided: number;
+  guidedMax: number;
 }
 
 export interface RadarBlip {

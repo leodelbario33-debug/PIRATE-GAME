@@ -3,7 +3,7 @@ import type { CraftId, GameCallbacks, HudData, MerchantKind, Mode, MsgKind, Rada
 import { CRAFTS, MERCHANT_INFO } from "./types";
 import { SFX } from "./audio";
 import {
-  buildGoFast, buildSub, buildRacer, buildMerchant, buildPatrol, buildIsland, buildCharacter, makeSea, makeSky, makeClouds,
+  buildGoFast, buildSub, buildRacer, buildLauncher, buildMerchant, buildPatrol, buildIsland, buildCharacter, makeSea, makeSky, makeClouds,
   buildCarrier, buildJetMesh, buildPoliceCarrier, CARRIER_DECK,
   waveH, rand, clamp, lerp, angDiff,
 } from "./world";
@@ -250,7 +250,7 @@ export class Game {
     this.pTex = new THREE.CanvasTexture(cv);
 
     // jugador
-    this.craft = def.submarine ? buildSub(def) : def.id === "kraken" ? buildCarrier(def) : def.id === "rayo" ? buildRacer(def) : buildGoFast(def);
+    this.craft = def.submarine ? buildSub(def) : def.id === "kraken" ? buildCarrier(def) : def.id === "rayo" ? buildRacer(def) : def.id === "balista" ? buildLauncher(def) : buildGoFast(def);
     this.craft.group.rotation.order = "YXZ";
     this.scene.add(this.craft.group);
     if (def.id === "kraken") {

@@ -398,6 +398,69 @@ export function buildRacer(def: CraftDef): PlayerRig {
   return { group: g, turret, muzzle, enginePuffs, bowAnchor, sternAnchor };
 }
 
+// Plataforma de largo alcance: perfil furtivo, UN solo piso corto y batería en cubierta
+export function buildLauncher(def: CraftDef): PlayerRig {
+  void def;
+  const g = new THREE.Group();
+  // casco bajo y ancho, proa hacia +Z
+  g.add(box(4.8, 1.3, 15, M.hullDark, 0, 0.65, 0));
+  const bow = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 2.4, 5.5, 4, 1), M.hullDark);
+  bow.rotation.x = Math.PI / 2;
+  bow.rotation.y = Math.PI / 4;
+  bow.scale.set(1, 1, 0.5);
+  bow.position.set(0, 0.6, 10);
+  g.add(bow);
+  // cubierta plana
+  g.add(box(4.9, 0.22, 20.2, M.deckSteel, 0, 1.42, 0.3));
+  // UN piso corto y bajo en el centro
+  g.add(box(3.2, 1.5, 4.6, M.dark, 0, 2.35, 1.2));
+  g.add(box(3.28, 0.55, 4.7, M.windowBlue, 0, 2.7, 1.2));
+  g.add(box(2.2, 0.4, 2.6, M.hullDark, 0, 3.3, 0.9));
+  // mástil corto con radar
+  g.add(box(0.18, 1.7, 0.18, M.steel, 0, 4.35, 0.4));
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(0.4, 8, 6), M.white);
+  dome.position.set(0, 5.3, 0.4);
+  g.add(dome);
+  // batería: 4 tubos verticales a popa
+  const tubeMat = new THREE.MeshStandardMaterial({ color: 0x2c3947, roughness: 0.5, metalness: 0.5, flatShading: true });
+  for (const sx of [-1.1, 1.1]) {
+    for (const sz of [-1.0, 0.2]) {
+      const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.48, 0.48, 2.1, 8), tubeMat);
+      tube.position.set(sx, 2.6, -4.6 + sz);
+      g.add(tube);
+      const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.14, 8), M.orange);
+      cap.position.set(sx, 3.72, -4.6 + sz);
+      g.add(cap);
+    }
+  }
+  // alerón bajo y 2 motores
+  g.add(box(4.2, 0.12, 0.9, M.orange, 0, 2.3, -7.2));
+  const enginePuffs: THREE.Object3D[] = [];
+  for (const sx of [-0.9, 0.9]) {
+    const e = new THREE.Group();
+    e.add(box(0.7, 1.1, 1.5, M.black, 0, 0.55, 0));
+    e.add(box(0.6, 0.45, 1.2, M.dark, 0, 1.2, -0.2));
+    e.position.set(sx, 0.4, -8);
+    g.add(e);
+    const puff = new THREE.Object3D();
+    puff.position.set(sx, 0.25, -9);
+    g.add(puff);
+    enginePuffs.push(puff);
+  }
+  // torreta defensiva pequeña a proa
+  const turret = new THREE.Group();
+  turret.position.set(0, 1.6, 5.4);
+  turret.add(box(0.4, 0.5, 0.4, M.steel, 0, 0.25, 0));
+  turret.add(box(0.26, 0.3, 1.5, M.black, 0, 0.72, 0.4));
+  const muzzle = new THREE.Object3D();
+  muzzle.position.set(0, 0.72, 2.2);
+  turret.add(muzzle);
+  g.add(turret);
+  const bowAnchor = new THREE.Object3D(); bowAnchor.position.set(0, 0.6, 12.4); g.add(bowAnchor);
+  const sternAnchor = new THREE.Object3D(); sternAnchor.position.set(0, 0.4, -8.8); g.add(sternAnchor);
+  return { group: g, turret, muzzle, enginePuffs, bowAnchor, sternAnchor };
+}
+
 export function buildSub(def: CraftDef): PlayerRig {
   const g = new THREE.Group();
   const hull = new THREE.Mesh(new THREE.CylinderGeometry(1.9, 1.9, 24, 10), M.subHull);
