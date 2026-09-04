@@ -180,18 +180,39 @@ export function buildGoFast(def: CraftDef): PlayerRig {
   const hw = big ? 2.7 : 1.7; // semimanga
   const hh = big ? 0.85 : 0.55; // semipuntal
   const hl = big ? 10 : 6.5; // semieslora
-  const bowLen = big ? 9.5 : def.id === "fantasma" ? 6.8 : 4;
+  const bowLen = def.id === "fantasma" ? 6.8 : 4;
   // casco: proa hacia +Z
   const hull = new THREE.Mesh(new THREE.BoxGeometry(hw * 2, hh * 2, hl * 2), M.hullDark);
   hull.position.y = hh;
   g.add(hull);
-  // proa larga y afilada
-  const bow = new THREE.Mesh(new THREE.CylinderGeometry(0.01, hw, bowLen, 4, 1), M.hullDark);
-  bow.rotation.x = Math.PI / 2;
-  bow.rotation.y = Math.PI / 4;
-  bow.scale.set(1, 1, 0.55);
-  bow.position.set(0, hh * 0.9, hl + bowLen / 2 - 0.3);
-  g.add(bow);
+  if (big) {
+    // proa MUY larga de punta roma: se afina por tramos pero conserva ancho en la punta
+    const segA = new THREE.Mesh(new THREE.CylinderGeometry(1.95, hw, 6, 4, 1), M.hullDark);
+    segA.rotation.x = Math.PI / 2; segA.rotation.y = Math.PI / 4; segA.scale.set(1, 1, 0.55);
+    segA.position.set(0, hh * 0.9, hl + 2.7);
+    g.add(segA);
+    const segB = new THREE.Mesh(new THREE.CylinderGeometry(1.35, 1.95, 5.5, 4, 1), M.hullDark);
+    segB.rotation.x = Math.PI / 2; segB.rotation.y = Math.PI / 4; segB.scale.set(1, 1, 0.55);
+    segB.position.set(0, hh * 0.9, hl + 8.45);
+    g.add(segB);
+    const segC = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 1.35, 4.5, 4, 1), M.hullDark);
+    segC.rotation.x = Math.PI / 2; segC.rotation.y = Math.PI / 4; segC.scale.set(1, 1, 0.55);
+    segC.position.set(0, hh * 0.9, hl + 13.45);
+    g.add(segC);
+    // labio superior que remata la punta (redondeado, no en pico)
+    const lip = new THREE.Mesh(new THREE.SphereGeometry(1.0, 8, 6), M.hullDark);
+    lip.scale.set(0.95, 0.5, 1.6);
+    lip.position.set(0, hh * 0.9, hl + 15.9);
+    g.add(lip);
+  } else {
+    // proa afilada clásica
+    const bow = new THREE.Mesh(new THREE.CylinderGeometry(0.01, hw, bowLen, 4, 1), M.hullDark);
+    bow.rotation.x = Math.PI / 2;
+    bow.rotation.y = Math.PI / 4;
+    bow.scale.set(1, 1, 0.55);
+    bow.position.set(0, hh * 0.9, hl + bowLen / 2 - 0.3);
+    g.add(bow);
+  }
   // franjas
   g.add(box(hw * 2 + 0.1, 0.28, hl * 2 + 0.05, M.orange, 0, hh * 2 - 0.2, 0));
   if (big) g.add(box(hw * 2 + 0.12, 0.16, hl * 2 + 0.06, M.steel, 0, 0.22, 0));
@@ -248,8 +269,8 @@ export function buildGoFast(def: CraftDef): PlayerRig {
     // alerón trasero sobre el piso 3
     g.add(box(hw * 1.7, 0.14, 1.2, M.orange, 0, d0 + 4.85, -hl * 0.66));
     for (const s of [-1, 1]) g.add(box(0.18, 1.0, 0.6, M.dark, s * hw * 0.8, d0 + 4.3, -hl * 0.66));
-    // nervadura naranja sobre la proa larga
-    g.add(box(0.5, 0.36, bowLen * 0.88, M.orange, 0, hh * 2 - 0.62, hl + bowLen * 0.42));
+    // nervadura naranja sobre toda la proa larga
+    g.add(box(0.5, 0.36, 14.6, M.orange, 0, hh * 2 - 0.62, hl + 7.4));
   }
   // 4 motores fueraborda gigantes
   const enginePuffs: THREE.Object3D[] = [];
@@ -302,7 +323,7 @@ export function buildGoFast(def: CraftDef): PlayerRig {
   muzzle.position.set(0, 0.98, 2.8);
   turret.add(muzzle);
   g.add(turret);
-  const bowAnchor = new THREE.Object3D(); bowAnchor.position.set(0, 0.4, big ? 18.9 : 9.2); g.add(bowAnchor);
+  const bowAnchor = new THREE.Object3D(); bowAnchor.position.set(0, 0.4, big ? 26.8 : 9.2); g.add(bowAnchor);
   const sternAnchor = new THREE.Object3D(); sternAnchor.position.set(0, 0.3, big ? -12.6 : -8.2); g.add(sternAnchor);
   return { group: g, turret, muzzle, enginePuffs, bowAnchor, sternAnchor };
 }

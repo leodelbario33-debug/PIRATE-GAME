@@ -40,7 +40,9 @@ function drawBlueprint(cv: HTMLCanvasElement, id: CraftId) {
   };
 
   if (id === "viuda") {
-    poly([[50, 112], [266, 112], [314, 118], [302, 138], [50, 138]]);
+    // casco con proa muy larga de punta roma
+    poly([[40, 112], [240, 112], [318, 114], [334, 119], [322, 128], [296, 134], [262, 138], [40, 138]]);
+    ctx.beginPath(); ctx.moveTo(250, 125); ctx.lineTo(330, 121); ctx.stroke();
     // tres pisos escalonados de proa a popa
     rect(92, 92, 172, 20);
     rect(110, 74, 138, 18);
