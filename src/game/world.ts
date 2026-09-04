@@ -213,18 +213,41 @@ export function buildGoFast(def: CraftDef): PlayerRig {
     for (const s of [-1, 1]) g.add(box(0.3, 0.9, 2.2, M.black, s * 1.55, hh * 2 + 0.45, -hl * 0.3));
   }
   if (big) {
-    // hardtop con radar
-    g.add(box(3.6, 0.32, 3.4, M.deckSteel, 0, hh * 2 + 1.6, hl * 0.185));
-    g.add(box(0.22, 1.3, 0.22, M.steel, 0, hh * 2 + 2.4, hl * 0.185 - 1.1));
-    const dome = new THREE.Mesh(new THREE.SphereGeometry(0.45, 8, 6), M.white);
-    dome.position.set(0, hh * 2 + 3.15, hl * 0.185 - 1.1);
-    g.add(dome);
-    // bidones de combustible
+    // tres pisos que recorren toda la cubierta (pesada superestructura escalonada)
+    const d0 = hh * 2; // nivel de cubierta
+    // piso 1: el más largo, de proa a popa
+    g.add(box(hw * 1.85, 1.7, hl * 1.78, M.dark, 0, d0 + 0.85, -hl * 0.05));
+    g.add(box(hw * 1.9, 0.62, hl * 1.8, M.windowBlue, 0, d0 + 1.15, -hl * 0.05));
+    // piso 2: intermedio
+    g.add(box(hw * 1.55, 1.5, hl * 1.45, M.hullDark, 0, d0 + 2.45, -hl * 0.1));
+    g.add(box(hw * 1.6, 0.55, hl * 1.47, M.windowBlue, 0, d0 + 2.7, -hl * 0.1));
+    // piso 3: superior
+    g.add(box(hw * 1.25, 1.3, hl * 1.05, M.dark, 0, d0 + 3.9, -hl * 0.14));
+    g.add(box(hw * 1.3, 0.5, hl * 1.07, M.windowBlue, 0, d0 + 4.1, -hl * 0.14));
+    // techos de cada nivel (pasarela perimetral)
+    g.add(box(hw * 1.92, 0.12, hl * 1.82, M.deckSteel, 0, d0 + 1.76, -hl * 0.05));
+    g.add(box(hw * 1.62, 0.12, hl * 1.49, M.deckSteel, 0, d0 + 3.26, -hl * 0.1));
+    g.add(box(hw * 1.32, 0.12, hl * 1.09, M.deckSteel, 0, d0 + 4.61, -hl * 0.14));
+    // barandillas finas en los bordes de cada piso
     for (const s of [-1, 1]) {
-      const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 1, 8), M.orange);
-      drum.position.set(s * (hw - 0.6), hh * 2 + 0.5, -hl * 0.45);
-      g.add(drum);
+      g.add(box(0.08, 0.5, hl * 1.8, M.steel, s * hw * 0.94, d0 + 2.0, -hl * 0.05));
+      g.add(box(0.08, 0.5, hl * 1.45, M.steel, s * hw * 0.78, d0 + 3.5, -hl * 0.1));
     }
+    // cuarto piso pequeño en la popa (torre de mando trasera)
+    g.add(box(hw * 0.95, 1.35, 2.9, M.hullDark, 0, d0 + 0.67, -hl * 0.95));
+    g.add(box(hw * 1.0, 0.5, 3.0, M.windowGlow, 0, d0 + 0.95, -hl * 0.95));
+    g.add(box(hw * 1.05, 0.1, 3.1, M.deckSteel, 0, d0 + 1.4, -hl * 0.95));
+    // mástil, radar y antenas sobre el piso 3
+    g.add(box(0.24, 2.1, 0.24, M.steel, 0, d0 + 5.6, -hl * 0.3));
+    const dome = new THREE.Mesh(new THREE.SphereGeometry(0.5, 8, 6), M.white);
+    dome.position.set(0, d0 + 6.8, -hl * 0.3);
+    g.add(dome);
+    g.add(box(1.7, 0.1, 0.34, M.white, 0, d0 + 6.2, -hl * 0.3));
+    g.add(box(0.08, 1.5, 0.08, M.steel, 0.9, d0 + 5.3, -hl * 0.05));
+    g.add(box(0.08, 1.2, 0.08, M.steel, -0.9, d0 + 5.15, -hl * 0.2));
+    // alerón trasero sobre el piso 3
+    g.add(box(hw * 1.7, 0.14, 1.2, M.orange, 0, d0 + 4.85, -hl * 0.66));
+    for (const s of [-1, 1]) g.add(box(0.18, 1.0, 0.6, M.dark, s * hw * 0.8, d0 + 4.3, -hl * 0.66));
     // nervadura naranja sobre la proa larga
     g.add(box(0.5, 0.36, bowLen * 0.88, M.orange, 0, hh * 2 - 0.62, hl + bowLen * 0.42));
   }

@@ -40,16 +40,28 @@ function drawBlueprint(cv: HTMLCanvasElement, id: CraftId) {
   };
 
   if (id === "viuda") {
-    poly([[58, 110], [272, 110], [312, 118], [300, 140], [58, 140]]);
-    rect(148, 92, 34, 18);
-    rect(152, 86, 26, 6);
-    poly([[246, 96], [262, 96], [262, 110], [246, 110]]);
-    ctx.beginPath(); ctx.moveTo(262, 100); ctx.lineTo(286, 96); ctx.stroke();
-    for (let i = 0; i < 4; i++) rect(34 + i * 15, 140, 11, 20);
-    ctx.beginPath(); ctx.moveTo(39, 160); ctx.lineTo(90, 160); ctx.moveTo(39, 156); ctx.lineTo(39, 164); ctx.moveTo(90, 156); ctx.lineTo(90, 164); ctx.stroke();
-    label("4× 450 HP", 30, 176);
-    label("M2 .50", 240, 88);
-    label("14 m", 150, 156);
+    poly([[50, 112], [266, 112], [314, 118], [302, 138], [50, 138]]);
+    // tres pisos escalonados de proa a popa
+    rect(92, 92, 172, 20);
+    rect(110, 74, 138, 18);
+    rect(128, 58, 104, 16);
+    ctx.beginPath(); ctx.moveTo(98, 98); ctx.lineTo(258, 98); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(116, 80); ctx.lineTo(242, 80); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(134, 64); ctx.lineTo(226, 64); ctx.stroke();
+    // cuarto piso pequeño en popa
+    rect(58, 96, 28, 16);
+    // mástil y radar
+    ctx.beginPath(); ctx.moveTo(180, 58); ctx.lineTo(180, 42); ctx.stroke();
+    ctx.beginPath(); ctx.arc(180, 40, 4, 0, Math.PI * 2); ctx.stroke();
+    // torreta a proa
+    poly([[246, 98], [262, 98], [262, 112], [246, 112]]);
+    ctx.beginPath(); ctx.moveTo(262, 102); ctx.lineTo(288, 98); ctx.stroke();
+    // 8 motores en doble fila
+    for (let i = 0; i < 4; i++) { rect(34 + i * 15, 138, 11, 14); rect(34 + i * 15, 152, 11, 10); }
+    ctx.beginPath(); ctx.moveTo(39, 170); ctx.lineTo(90, 170); ctx.moveTo(39, 166); ctx.lineTo(39, 174); ctx.moveTo(90, 166); ctx.lineTo(90, 174); ctx.stroke();
+    label("8× 700 HP", 30, 186);
+    label("M2 .50", 242, 92);
+    label("3 PISOS · 280 NUDOS", 128, 106);
   } else if (id === "fantasma") {
     // casco con proa larga
     poly([[58, 116], [262, 116], [322, 122], [296, 136], [58, 136]]);
