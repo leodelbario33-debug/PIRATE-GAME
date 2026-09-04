@@ -63,7 +63,7 @@ function drawBlueprint(cv: HTMLCanvasElement, id: CraftId) {
     ctx.beginPath(); ctx.moveTo(39, 170); ctx.lineTo(90, 170); ctx.moveTo(39, 166); ctx.lineTo(39, 174); ctx.moveTo(90, 166); ctx.lineTo(90, 174); ctx.stroke();
     label("8× 700 HP", 30, 186);
     label("M2 .50", 242, 92);
-    label("3 PISOS · 280 NUDOS", 128, 106);
+    label("3 PISOS · 490 NUDOS", 128, 106);
   } else if (id === "fantasma") {
     // casco con proa larga
     poly([[58, 116], [262, 116], [322, 122], [296, 136], [58, 136]]);
