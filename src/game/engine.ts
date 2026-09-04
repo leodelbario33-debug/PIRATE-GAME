@@ -251,6 +251,7 @@ export class Game {
 
     // jugador
     this.craft = def.submarine ? buildSub(def) : def.id === "kraken" ? buildCarrier(def) : def.id === "rayo" ? buildRacer(def) : buildGoFast(def);
+    this.craft.group.rotation.order = "YXZ";
     this.scene.add(this.craft.group);
     if (def.id === "kraken") {
       for (const z of [70, 30, -10]) {
@@ -714,7 +715,8 @@ export class Game {
       const targetPitch = clamp(wavePitch - planing, -0.24, 0.08 * (1 - spdK));
       // suavizado temporal: al cruzar una ola el morro no se invierte de golpe
       this.craft.group.rotation.x = lerp(this.craft.group.rotation.x, targetPitch, clamp(dt * 5, 0, 1));
-      this.craft.group.rotation.z = Math.atan2(hS - hC, e) * 0.9;
+      const targetRoll = -turnIn * 0.16 * spdK + Math.atan2(hS - hC, e) * 0.55;
+      this.craft.group.rotation.z = lerp(this.craft.group.rotation.z, targetRoll, clamp(dt * 6, 0, 1));
     } else {
       this.craft.group.rotation.x = lerp(this.craft.group.rotation.x, this.throttle * 0.12, dt * 2);
       this.craft.group.rotation.z = lerp(this.craft.group.rotation.z, -turnIn * 0.15, dt * 3);
@@ -1184,9 +1186,28 @@ export class Game {
         for (const off of [-16, 16]) {
           const sp = pc.group.localToWorld(new THREE.Vector3(off, 26, -34));
           const gm = new THREE.Group();
-          const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.24, 2.4, 3, 6), new THREE.MeshStandardMaterial({ color: 0xe8ecf0, roughness: 0.5 }));
+          const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.7, 5.4, 4, 10), new THREE.MeshStandardMaterial({ color: 0xf2f5f7, roughness: 0.35 }));
           body.rotation.x = Math.PI / 2;
           gm.add(body);
+          for (const s of [-1, 1]) {
+            const stripe = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.34, 0.9), new THREE.MeshStandardMaterial({ color: 0xff5a2e, emissive: 0xff3c14, emissiveIntensity: 1.7 }));
+            stripe.position.set(0, s * 0.55, -0.6);
+            gm.add(stripe);
+          }
+          const nose = new THREE.Mesh(new THREE.ConeGeometry(0.7, 1.8, 10), new THREE.MeshStandardMaterial({ color: 0xd84040, emissive: 0x901818, emissiveIntensity: 0.8 }));
+          nose.rotation.x = Math.PI / 2;
+          nose.position.z = 3.6;
+          gm.add(nose);
+          for (const a of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
+            const fin = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.1, 1.3), new THREE.MeshStandardMaterial({ color: 0x39424e, roughness: 0.6, flatShading: true }));
+            fin.position.set(Math.cos(a) * 0.72, Math.sin(a) * 0.72, -2.4);
+            fin.rotation.z = a;
+            gm.add(fin);
+          }
+          const flame = new THREE.Mesh(new THREE.ConeGeometry(0.55, 3.2, 8), new THREE.MeshBasicMaterial({ color: 0xffb050, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }));
+          flame.rotation.x = -Math.PI / 2;
+          flame.position.z = -4.6;
+          gm.add(flame);
           gm.position.copy(sp);
           const aim = this.playerPosWorld().add(new THREE.Vector3(0, 3, 0));
           const vel = aim.sub(sp).normalize().multiplyScalar(235);
@@ -1253,9 +1274,26 @@ export class Game {
         if (pj.fireT <= 0) {
           pj.fireT = rand(3.2, 4.8);
           const gm = new THREE.Group();
-          const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.22, 2.2, 3, 6), new THREE.MeshStandardMaterial({ color: 0xd8dde2, roughness: 0.5 }));
+          const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.5, 3.8, 4, 8), new THREE.MeshStandardMaterial({ color: 0xe8ecf0, roughness: 0.4 }));
           body.rotation.x = Math.PI / 2;
           gm.add(body);
+          const stripe = new THREE.Mesh(new THREE.CylinderGeometry(0.52, 0.52, 0.8, 8), new THREE.MeshStandardMaterial({ color: 0xff5a2e, emissive: 0xff3c14, emissiveIntensity: 1.6 }));
+          stripe.rotation.x = Math.PI / 2;
+          stripe.position.z = -0.5;
+          gm.add(stripe);
+          const nose = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1.3, 8), new THREE.MeshStandardMaterial({ color: 0xd84040, emissive: 0x901818, emissiveIntensity: 0.8 }));
+          nose.rotation.x = Math.PI / 2;
+          nose.position.z = 2.5;
+          gm.add(nose);
+          for (const s of [-1, 1]) {
+            const fin = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.9, 1.0), new THREE.MeshStandardMaterial({ color: 0x39424e, roughness: 0.6, flatShading: true }));
+            fin.position.set(s * 0.55, 0, -1.6);
+            gm.add(fin);
+          }
+          const flame = new THREE.Mesh(new THREE.ConeGeometry(0.4, 2.4, 8), new THREE.MeshBasicMaterial({ color: 0xffb050, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }));
+          flame.rotation.x = -Math.PI / 2;
+          flame.position.z = -3.2;
+          gm.add(flame);
           gm.position.copy(pj.pos).addScaledVector(fwd2, 5);
           const aim = this.playerPosWorld().add(new THREE.Vector3(0, this.mode === "jet" ? 0 : 2, 0));
           const vel = aim.sub(gm.position).normalize().multiplyScalar(230);
@@ -1320,7 +1358,16 @@ export class Game {
       em.vel = cur.multiplyScalar(215);
       em.mesh.position.addScaledVector(em.vel, dt);
       em.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), cur);
-      if (Math.random() < 0.7) this.spawnP(em.mesh.position.clone(), new THREE.Vector3(rand(-0.5, 0.5), rand(-0.2, 0.6), rand(-0.5, 0.5)), 0.5, 0.8, 2, 0xcfe8ee, 0.4, -0.5, true);
+      // estela visible desde lejos: humo denso y persistente + núcleo caliente
+      const tail = em.mesh.position.clone().addScaledVector(cur, -3);
+      for (let i = 0; i < 4; i++) {
+        this.spawnP(
+          tail.clone().add(new THREE.Vector3(rand(-0.8, 0.8), rand(-0.5, 0.7), rand(-0.8, 0.8))),
+          new THREE.Vector3(rand(-0.6, 0.6), rand(0.3, 1.1), rand(-0.6, 0.6)),
+          rand(0.9, 1.5), rand(2.2, 3.4), rand(6, 9), i < 2 ? 0x2e3238 : 0x5a6068, 0.55, -0.18, false
+        );
+      }
+      this.spawnP(tail.clone(), new THREE.Vector3(), 0.14, 1.6, 3.4, 0xffb060, 1, 0, true);
       if (d < 15) {
         this.explosion(em.mesh.position.clone(), 1.1);
         this.damagePlayer(this.mode === "jet" ? 26 : 18);
