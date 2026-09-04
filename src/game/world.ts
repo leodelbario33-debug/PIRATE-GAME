@@ -461,6 +461,89 @@ export function buildLauncher(def: CraftDef): PlayerRig {
   return { group: g, turret, muzzle, enginePuffs, bowAnchor, sternAnchor };
 }
 
+// lancha bala: casco fino y largo con cabina cerrada y soporte del planeador arriba
+export function buildBullet(def: CraftDef): PlayerRig {
+  void def;
+  const g = new THREE.Group();
+  g.add(box(3.1, 1.05, 17, M.hullDark, 0, 0.55, 0));
+  const bow = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 1.55, 7.5, 4, 1), M.hullDark);
+  bow.rotation.x = Math.PI / 2;
+  bow.rotation.y = Math.PI / 4;
+  bow.scale.set(1, 1, 0.45);
+  bow.position.set(0, 0.5, 12);
+  g.add(bow);
+  g.add(box(3.16, 0.22, 17.1, M.orange, 0, 0.95, 0));
+  // cabina cerrada aerodinámica
+  g.add(box(2.3, 1.15, 4.4, M.dark, 0, 1.65, 3.4));
+  g.add(box(2.38, 0.55, 4.5, M.windowBlue, 0, 1.9, 3.4));
+  const nose = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 1.15, 1.9, 4, 1), M.dark);
+  nose.rotation.x = Math.PI / 2;
+  nose.rotation.y = Math.PI / 4;
+  nose.scale.set(1, 0.5, 0.55);
+  nose.position.set(0, 1.6, 6.2);
+  g.add(nose);
+  // aletín trasero
+  g.add(box(0.16, 1.1, 2.4, M.hullDark, 0, 1.6, -7.6));
+  g.add(box(2.4, 0.1, 1.1, M.orange, 0, 2.15, -7.6));
+  // soporte + planeador plegado arriba (se oculta al lanzarlo)
+  g.add(box(0.3, 1.0, 0.3, M.steel, -0.9, 1.6, -2.2));
+  g.add(box(0.3, 1.0, 0.3, M.steel, 0.9, 1.6, -2.2));
+  const rack = buildGlider(true);
+  rack.name = "rackGlider";
+  rack.scale.setScalar(0.8);
+  rack.position.set(0, 2.55, -2.2);
+  g.add(rack);
+  // motor grande único
+  const enginePuffs: THREE.Object3D[] = [];
+  const e = new THREE.Group();
+  e.add(box(1.5, 1.5, 2.4, M.black, 0, 0.75, 0));
+  e.add(box(1.3, 0.6, 2.0, M.dark, 0, 1.7, -0.2));
+  e.position.set(0, 0.35, -9.4);
+  g.add(e);
+  const puff = new THREE.Object3D();
+  puff.position.set(0, 0.3, -10.8);
+  g.add(puff);
+  enginePuffs.push(puff);
+  // torreta a proa
+  const turret = new THREE.Group();
+  turret.position.set(0, 1.25, 6.2);
+  turret.add(box(0.4, 0.5, 0.4, M.steel, 0, 0.25, 0));
+  turret.add(box(0.26, 0.3, 1.5, M.black, 0, 0.72, 0.4));
+  const muzzle = new THREE.Object3D();
+  muzzle.position.set(0, 0.72, 2.2);
+  turret.add(muzzle);
+  g.add(turret);
+  const bowAnchor = new THREE.Object3D(); bowAnchor.position.set(0, 0.5, 15.4); g.add(bowAnchor);
+  const sternAnchor = new THREE.Object3D(); sternAnchor.position.set(0, 0.3, -10.6); g.add(sternAnchor);
+  return { group: g, turret, muzzle, enginePuffs, bowAnchor, sternAnchor };
+}
+
+// planeador: ala en delta, flotadores y motora trasera
+export function buildGlider(folded = false): THREE.Group {
+  const g = new THREE.Group();
+  const fuse = new THREE.Mesh(new THREE.CapsuleGeometry(0.42, 3.6, 4, 8), M.white);
+  fuse.rotation.x = Math.PI / 2;
+  g.add(fuse);
+  g.add(box(0.5, 0.4, 1.1, M.windowBlue, 0, 0.3, 1.1));
+  const wingW = folded ? 2.4 : 8.6;
+  const wing = new THREE.Mesh(new THREE.BoxGeometry(wingW, 0.12, 1.9), M.orange);
+  wing.position.set(0, 0.12, -0.2);
+  g.add(wing);
+  const tail = new THREE.Mesh(new THREE.BoxGeometry(3, 0.1, 0.9), M.white);
+  tail.position.set(0, 0.5, -2.1);
+  g.add(tail);
+  g.add(box(0.1, 0.9, 0.7, M.white, 0, 0.9, -2.1));
+  for (const s of [-1, 1]) {
+    const fl = new THREE.Mesh(new THREE.CapsuleGeometry(0.22, 1.6, 3, 6), M.hullDark);
+    fl.rotation.x = Math.PI / 2;
+    fl.position.set(s * 0.8, -0.55, 0.1);
+    g.add(fl);
+  }
+  // motora plegada trasera
+  g.add(box(0.5, 0.5, 0.9, M.black, 0, 0.05, -2.6));
+  return g;
+}
+
 export function buildSub(def: CraftDef): PlayerRig {
   const g = new THREE.Group();
   const hull = new THREE.Mesh(new THREE.CylinderGeometry(1.9, 1.9, 24, 10), M.subHull);

@@ -3,7 +3,7 @@ import type { CraftId, GameCallbacks, HudData, MerchantKind, Mode, MsgKind, Rada
 import { CRAFTS, MERCHANT_INFO } from "./types";
 import { SFX } from "./audio";
 import {
-  buildGoFast, buildSub, buildRacer, buildLauncher, buildMerchant, buildPatrol, buildIsland, buildCharacter, makeSea, makeSky, makeClouds,
+  buildGoFast, buildSub, buildRacer, buildLauncher, buildBullet, buildGlider, buildMerchant, buildPatrol, buildIsland, buildCharacter, makeSea, makeSky, makeClouds,
   buildCarrier, buildJetMesh, buildPoliceCarrier, CARRIER_DECK,
   waveH, rand, clamp, lerp, angDiff,
 } from "./world";
@@ -52,6 +52,7 @@ interface HyperMissile {
   radius: number;
 }
 interface Missile { mesh: THREE.Group; start: THREE.Vector3; end: THREE.Vector3; t: number; dur: number; arc: number; }
+interface GliderEnt { group: THREE.Group; pos: THREE.Vector3; heading: number; pitch: number; speed: number; state: "air" | "water"; motorT: number; }
 interface Particle {
   s: THREE.Sprite; vel: THREE.Vector3; life: number; maxLife: number;
   s0: number; s1: number; grav: number; op: number;
@@ -177,6 +178,10 @@ export class Game {
   private hyperCool = 0;
   private hyperMissiles: HyperMissile[] = [];
 
+  // planeador de la BALA
+  private glider: GliderEnt | null = null;
+  private gliderCool = 0;
+
   // cuerda de abordaje (visible en la zona ciega)
   private ropeGeo = new THREE.BufferGeometry();
   private ropeLine: THREE.Line;
@@ -250,7 +255,7 @@ export class Game {
     this.pTex = new THREE.CanvasTexture(cv);
 
     // jugador
-    this.craft = def.submarine ? buildSub(def) : def.id === "kraken" ? buildCarrier(def) : def.id === "rayo" ? buildRacer(def) : def.id === "balista" ? buildLauncher(def) : buildGoFast(def);
+    this.craft = def.submarine ? buildSub(def) : def.id === "kraken" ? buildCarrier(def) : def.id === "rayo" ? buildRacer(def) : def.id === "balista" ? buildLauncher(def) : def.id === "bala" ? buildBullet(def) : buildGoFast(def);
     this.craft.group.rotation.order = "YXZ";
     this.scene.add(this.craft.group);
     if (def.id === "kraken") {
@@ -607,7 +612,8 @@ export class Game {
     if (this.mode === "sea") this.updateSea(dt);
     else if (this.mode === "board") this.updateBoard(dt);
     else if (this.mode === "captain") this.updateCaptain(dt);
-    else this.updateJet(dt);
+    else if (this.mode === "jet") this.updateJet(dt);
+    else this.updateGlider(dt);
 
     this.updateMerchants(dt);
     this.updatePatrols(dt);
@@ -1619,6 +1625,101 @@ export class Game {
       }
     }
     this.hyperMissiles = this.hyperMissiles.filter((h) => h.life > 0);
+  }
+
+  // ------------------------------------------------------------- planeador BALA
+  private launchGlider() {
+    const g = buildGlider(false);
+    this.scene.add(g);
+    const p = this.craft.group.position.clone().add(new THREE.Vector3(0, 4, 0));
+    this.glider = { group: g, pos: p, heading: this.heading, pitch: 0.3, speed: Math.abs(this.speed) * 0.9 + 46, state: "air", motorT: 1 };
+    const rack = this.craft.group.getObjectByName("rackGlider");
+    if (rack) rack.visible = false;
+    this.mode = "glider";
+    this.gliderCool = 0;
+    this.sfx.takeoff();
+    this.pushMsg("¡PLANEADOR LANZADO! W/S cabear · A/D girar · ameriza cuando quieras", "good");
+  }
+
+  private updateGlider(dt: number) {
+    const gl = this.glider!;
+    const k = this.keys;
+    const spdK = Math.abs(this.speed);
+    void spdK;
+    if (gl.state === "air") {
+      // planeo sin motor: la gravedad hace el trabajo
+      let pit = 0;
+      if (k.has("KeyW")) pit -= 1; // morro abajo: gana velocidad
+      if (k.has("KeyS")) pit += 1; // morro arriba: frena y gana altura
+      gl.pitch = clamp(gl.pitch + pit * dt * 1.1, -0.6, 0.5);
+      if (k.has("KeyA")) gl.heading += dt * 1.5;
+      if (k.has("KeyD")) gl.heading -= dt * 1.5;
+      gl.speed += -Math.sin(gl.pitch) * 30 * dt - 1.6 * dt - gl.speed * 0.012 * dt;
+      gl.speed = clamp(gl.speed, 13, 175);
+      // pérdida: sin velocidad el morro cae solo
+      if (gl.speed < 20 && gl.pitch > 0.15) gl.pitch = Math.max(-0.2, gl.pitch - dt * 1.4);
+      const v = new THREE.Vector3(Math.sin(gl.heading) * Math.cos(gl.pitch), Math.sin(gl.pitch), Math.cos(gl.heading) * Math.cos(gl.pitch));
+      gl.pos.addScaledVector(v, gl.speed * dt);
+      gl.pos.y -= 2.0 * dt; // descenso natural del planeo
+      gl.group.position.copy(gl.pos);
+      gl.group.rotation.y = gl.heading;
+      gl.group.rotation.x = -gl.pitch;
+      // estela blanca de velocidad
+      if (gl.speed > 60 && Math.random() < 0.5) {
+        this.spawnP(gl.pos.clone().add(new THREE.Vector3(0, -0.4, 0)), new THREE.Vector3(rand(-0.4, 0.4), 0, rand(-0.4, 0.4)), 0.3, 0.5, 1.6, 0xdff2f5, 0.35, 0, true);
+      }
+      const seaY = waveH(gl.pos.x, gl.pos.z, this.t);
+      if (gl.pos.y <= seaY + 0.6) {
+        // amerizaje: se despliega la motora
+        gl.state = "water";
+        gl.pos.y = seaY + 0.55;
+        gl.pitch = 0;
+        gl.speed *= 0.45;
+        this.splash(gl.pos.clone(), 1.5);
+        this.sfx.splashDown();
+        this.pushMsg("AMERIZAJE — motora desplegada. Vuelve a la BALA y pulsa 2 cerca para aparcar", "info");
+      }
+    } else {
+      // en el agua con la motora desplegada
+      let th = 0;
+      if (k.has("KeyW")) th = 1;
+      if (k.has("KeyS")) th = -0.55;
+      if (k.has("KeyA")) gl.heading += dt * 1.9 * (0.4 + Math.min(1, gl.speed / 20));
+      if (k.has("KeyD")) gl.heading -= dt * 1.9 * (0.4 + Math.min(1, gl.speed / 20));
+      if (gl.motorT > 0) {
+        gl.motorT -= dt * (th > 0 ? 1 / 26 : 0.25 / 26);
+        gl.speed = lerp(gl.speed, th * 46, dt * 1.1);
+        if (gl.motorT <= 0) { gl.motorT = 0; this.pushMsg("La motora se quedó sin combustible: deriva...", "warn"); }
+      } else {
+        gl.speed = lerp(gl.speed, th > 0 ? 5 : 0, dt * 0.5);
+      }
+      const v = new THREE.Vector3(Math.sin(gl.heading), 0, Math.cos(gl.heading));
+      gl.pos.addScaledVector(v, gl.speed * dt);
+      gl.pos.y = waveH(gl.pos.x, gl.pos.z, this.t) + 0.55;
+      gl.group.position.copy(gl.pos);
+      gl.group.rotation.y = gl.heading;
+      gl.group.rotation.x = Math.atan2(waveH(gl.pos.x, gl.pos.z, this.t) - waveH(gl.pos.x + v.x * 2, gl.pos.z + v.z * 2, this.t), 2) * 0.7;
+      if (Math.abs(gl.speed) > 6 && Math.random() < 0.6) {
+        this.spawnP(gl.pos.clone().addScaledVector(v, -2.4), new THREE.Vector3(rand(-1, 1), rand(0.5, 1.5), rand(-1, 1)), 0.5, 0.9, 1.8, 0xe8f6f6, 0.45, 0.5, true);
+      }
+    }
+    // aparcar bajo la BALA
+    const dShip = gl.pos.distanceTo(this.craft.group.position);
+    this.canInteract = dShip < 46 ? "PULSA 2 — APARCAR EL PLANEADOR BAJO LA BALA" : null;
+    if (dShip < 46 && this.pressed.has("Digit2")) this.parkGlider();
+  }
+
+  private parkGlider() {
+    if (!this.glider) return;
+    this.scene.remove(this.glider.group);
+    this.glider = null;
+    this.mode = "sea";
+    this.canInteract = null;
+    this.gliderCool = 18;
+    const rack = this.craft.group.getObjectByName("rackGlider");
+    if (rack) rack.visible = true;
+    this.sfx.uiClick();
+    this.pushMsg("PLANEADOR APARCADO bajo la BALA. Se prepara para el próximo lanzamiento...", "good");
   }
 
   private toLocal(m: Merchant, world: THREE.Vector3): THREE.Vector3 {

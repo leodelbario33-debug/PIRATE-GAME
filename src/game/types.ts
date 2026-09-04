@@ -1,4 +1,4 @@
-export type CraftId = "viuda" | "fantasma" | "tiburon" | "kraken" | "rayo" | "balista";
+export type CraftId = "viuda" | "fantasma" | "tiburon" | "kraken" | "rayo" | "balista" | "bala";
 
 export interface CraftDef {
   id: CraftId;
@@ -17,6 +17,7 @@ export interface CraftDef {
   missileKind?: "arc" | "dart"; // "dart": proyectil recto al punto marcado, sin curva ni guiado
   hypers?: number; // proyectiles hipersónicos guiados (tecla T)
   guided?: number; // batería de largo alcance con fijación manual (tecla 1)
+  glider?: boolean; // lleva planeador desplegable (tecla 1 a 400 nudos)
   jets?: number; // cazas disponibles en cubierta
   submarine: boolean;
   color: string;
@@ -144,11 +145,32 @@ export const CRAFTS: Record<CraftId, CraftDef> = {
     displayKnots: 28,
     stats: { velocidad: 2, viraje: 3, blindaje: 2, potencia: 4 },
   },
+  bala: {
+    id: "bala",
+    name: "BALA",
+    cls: "LANCHA BALA + PLANEADOR",
+    desc: "Un proyectil sobre el agua. A 400 NUDOS pulsas 1 y el PLANEADOR sale disparado de su soporte: planea sin motor durante mucho tiempo, ameriza cuando quieras y despliega su motora para volver. Cerca de la BALA, pulsa 2 y se aparca bajo el casco.",
+    glider: true,
+    topSpeed: 224,
+    accel: 18,
+    turn: 2.6,
+    hull: 85,
+    weaponName: "M2 DE PROA",
+    weaponDmg: 10,
+    fireRate: 9,
+    torpedoes: 0,
+    missiles: 0,
+    hypers: 0,
+    submarine: false,
+    color: "#101018",
+    displayKnots: 540,
+    stats: { velocidad: 5, viraje: 4, blindaje: 1, potencia: 5 },
+  },
 };
 
 export type MerchantKind = "cargo" | "tanker" | "yacht" | "liner";
 
-export type Mode = "sea" | "board" | "captain" | "jet";
+export type Mode = "sea" | "board" | "captain" | "jet" | "glider";
 
 export type MsgKind = "info" | "warn" | "danger" | "good" | "money";
 
@@ -196,6 +218,11 @@ export interface HudData {
   lockDist: number;
   guided: number;
   guidedMax: number;
+  // planeador (BALA)
+  gliderState: "none" | "ready" | "air" | "water";
+  gliderMotor: number; // 0..1
+  gliderAlt: number;
+  gliderCool: number;
 }
 
 export interface RadarBlip {
