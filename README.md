@@ -5,7 +5,8 @@ Rob, escape, and fight your way through thrilling scenarios. Police patrols chas
 
 With dynamic gameplay, immersive action, and offline freedom, Pirate Narco Wars delivers a unique mix of crime, speed, and strategy — all in one explosive experience.
 
-PIRATE NARCO WARS
+
+# PIRATE NARCO WARS
 
 Set sail into chaos! In this wild pirate adventure, you’ll race across the seas in narcolanchas, clash with police patrols, and loot treasures while dodging bullets and rival gangs. The map is alive with danger, weapons, and nonstop action.
 
