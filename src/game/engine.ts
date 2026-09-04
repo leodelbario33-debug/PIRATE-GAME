@@ -52,7 +52,7 @@ interface HyperMissile {
   radius: number;
 }
 interface Missile { mesh: THREE.Group; start: THREE.Vector3; end: THREE.Vector3; t: number; dur: number; arc: number; }
-interface GliderEnt { group: THREE.Group; pos: THREE.Vector3; heading: number; pitch: number; speed: number; state: "air" | "water"; motorT: number; }
+interface GliderEnt { group: THREE.Group; pos: THREE.Vector3; heading: number; pitch: number; speed: number; state: "air" | "water"; motorT: number; boostT: number; }
 interface GuidedShell { mesh: THREE.Group; vel: THREE.Vector3; speed: number; life: number; smokeT: number; target: Merchant; }
 interface Particle {
   s: THREE.Sprite; vel: THREE.Vector3; life: number; maxLife: number;
@@ -1677,7 +1677,8 @@ export class Game {
     const g = buildGlider(false);
     this.scene.add(g);
     const p = this.craft.group.position.clone().add(new THREE.Vector3(0, 4, 0));
-    this.glider = { group: g, pos: p, heading: this.heading, pitch: 0.3, speed: Math.abs(this.speed) * 0.9 + 46, state: "air", motorT: 1 };
+    // salida disparada: sube a más de 450 nudos (~240 m/s) y luego decae al planeo
+    this.glider = { group: g, pos: p, heading: this.heading, pitch: 0.68, speed: 120, state: "air", motorT: 1, boostT: 2.4 };
     const rack = this.craft.group.getObjectByName("rackGlider");
     if (rack) rack.visible = false;
     this.mode = "glider";
@@ -1692,11 +1693,21 @@ export class Game {
     const spdK = Math.abs(this.speed);
     void spdK;
     if (gl.state === "air") {
-      // planeo sin motor: la gravedad hace el trabajo
-      let pit = 0;
-      if (k.has("KeyW")) pit -= 1; // morro abajo: gana velocidad
-      if (k.has("KeyS")) pit += 1; // morro arriba: frena y gana altura
-      gl.pitch = clamp(gl.pitch + pit * dt * 1.1, -0.6, 0.5);
+      if (gl.boostT > 0) {
+        // fase de lanzamiento: trepa disparado por encima de 450 nudos
+        gl.boostT -= dt;
+        gl.speed = lerp(gl.speed, 242, dt * 2.5);
+        gl.pitch = lerp(gl.pitch, 0.62, dt * 3.4);
+        if (Math.random() < 0.8) {
+          this.spawnP(gl.pos.clone().add(new THREE.Vector3(0, -1.2, 0)), new THREE.Vector3(rand(-0.6, 0.6), rand(-2, -0.5), rand(-0.6, 0.6)), 0.6, 0.8, 2.4, 0xe8f6f6, 0.5, 0.4, true);
+        }
+      } else {
+        // planeo sin motor: la gravedad hace el trabajo
+        let pit = 0;
+        if (k.has("KeyW")) pit -= 1; // morro abajo: gana velocidad
+        if (k.has("KeyS")) pit += 1; // morro arriba: frena y gana altura
+        gl.pitch = clamp(gl.pitch + pit * dt * 1.1, -0.6, 0.5);
+      }
       if (k.has("KeyA")) gl.heading += dt * 1.5;
       if (k.has("KeyD")) gl.heading -= dt * 1.5;
       gl.speed += -Math.sin(gl.pitch) * 30 * dt - 1.6 * dt - gl.speed * 0.012 * dt;

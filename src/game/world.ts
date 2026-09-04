@@ -525,11 +525,21 @@ export function buildGlider(folded = false): THREE.Group {
   fuse.rotation.x = Math.PI / 2;
   g.add(fuse);
   g.add(box(0.5, 0.4, 1.1, M.windowBlue, 0, 0.3, 1.1));
-  const wingW = folded ? 2.4 : 8.6;
-  const wing = new THREE.Mesh(new THREE.BoxGeometry(wingW, 0.12, 1.9), M.orange);
+  // alas enormes en delta
+  const wingW = folded ? 2.6 : 21;
+  const wing = new THREE.Mesh(new THREE.BoxGeometry(wingW, 0.14, 2.7), M.orange);
   wing.position.set(0, 0.12, -0.2);
   g.add(wing);
-  const tail = new THREE.Mesh(new THREE.BoxGeometry(3, 0.1, 0.9), M.white);
+  if (!folded) {
+    const wing2 = new THREE.Mesh(new THREE.BoxGeometry(wingW, 0.06, 1.0), M.white);
+    wing2.position.set(0, 0.2, 0.45);
+    g.add(wing2);
+    for (const s of [-1, 1]) {
+      const tip = box(0.12, 0.7, 1.4, M.hullDark, s * (wingW / 2 - 0.05), 0.42, -0.2);
+      g.add(tip);
+    }
+  }
+  const tail = new THREE.Mesh(new THREE.BoxGeometry(folded ? 3 : 6.6, 0.1, 1.1), M.white);
   tail.position.set(0, 0.5, -2.1);
   g.add(tail);
   g.add(box(0.1, 0.9, 0.7, M.white, 0, 0.9, -2.1));
