@@ -465,69 +465,113 @@ export function buildLauncher(def: CraftDef): PlayerRig {
 export function buildBullet(def: CraftDef): PlayerRig {
   void def;
   const g = new THREE.Group();
-  g.add(box(3.1, 1.05, 17, M.hullDark, 0, 0.55, 0));
-  const bow = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 1.55, 7.5, 4, 1), M.hullDark);
+  // ---- casco: gordo por popa, se afina hacia la proa ----
+  const segs: [number, number, number, number][] = [
+    // [ancho, alto, largo, z]
+    [7.0, 1.55, 6.0, -7.5], // popa bien ancha y alta
+    [6.0, 1.4, 6.0, -1.8],
+    [4.6, 1.2, 6.0, 3.9],
+    [3.2, 1.05, 5.5, 8.6], // proa fina
+  ];
+  for (const [w, h, d, z] of segs) g.add(box(w, h, d, M.hullDark, 0, h / 2, z));
+  // punta de proa afilada
+  const bow = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 1.6, 6.5, 4, 1), M.hullDark);
   bow.rotation.x = Math.PI / 2;
   bow.rotation.y = Math.PI / 4;
-  bow.scale.set(1, 1, 0.45);
-  bow.position.set(0, 0.5, 12);
+  bow.scale.set(1, 1, 0.42);
+  bow.position.set(0, 0.5, 14.5);
   g.add(bow);
-  g.add(box(3.16, 0.22, 17.1, M.orange, 0, 0.95, 0));
-  // cabina cerrada aerodinámica
-  g.add(box(2.3, 1.15, 4.4, M.dark, 0, 1.65, 3.4));
-  g.add(box(2.38, 0.55, 4.5, M.windowBlue, 0, 1.9, 3.4));
-  const nose = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 1.15, 1.9, 4, 1), M.dark);
+  // franja naranja longitudinal a lo largo del costado
+  g.add(box(7.06, 0.24, 24, M.orange, 0, 1.1, -2));
+  // cubierta superior de popa (plataforma de motores)
+  g.add(box(6.6, 0.3, 12, M.deckSteel, 0, 1.62, -4));
+
+  // ---- cabina cerrada aerodinámica (hacia proa) ----
+  g.add(box(2.6, 1.15, 4.6, M.dark, 0, 1.9, 5.6));
+  g.add(box(2.68, 0.55, 4.7, M.windowBlue, 0, 2.15, 5.6));
+  const nose = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 1.3, 2.2, 4, 1), M.dark);
   nose.rotation.x = Math.PI / 2;
   nose.rotation.y = Math.PI / 4;
   nose.scale.set(1, 0.5, 0.55);
-  nose.position.set(0, 1.6, 6.2);
+  nose.position.set(0, 1.9, 8.4);
   g.add(nose);
   // aletín trasero
-  g.add(box(0.16, 1.1, 2.4, M.hullDark, 0, 1.6, -7.6));
-  g.add(box(2.4, 0.1, 1.1, M.orange, 0, 2.15, -7.6));
-  // cubierta aerodinámica trasera: se despliega a alta velocidad (oculta al inicio)
+  g.add(box(0.16, 1.2, 2.6, M.hullDark, 0, 2.2, -10));
+  g.add(box(3.4, 0.1, 1.2, M.orange, 0, 2.8, -10));
+
+  // ---- toldo tipo PARACAÍDAS en proa: se abre al llegar a 300 nudos ----
   const canopy = new THREE.Group();
   canopy.name = "aeroCanopy";
-  canopy.add(box(2.9, 0.16, 6.6, M.hullDark, 0, 1.3, -3.4));
-  const ramp = box(2.9, 0.14, 3.4, M.orange, 0, 0.92, -7.1);
-  ramp.rotation.x = 0.42;
-  canopy.add(ramp);
-  canopy.add(box(0.22, 0.85, 0.22, M.steel, -1.2, 0.85, -1.6));
-  canopy.add(box(0.22, 0.85, 0.22, M.steel, 1.2, 0.85, -1.6));
-  canopy.add(box(0.22, 0.85, 0.22, M.steel, -1.2, 0.85, -5.2));
-  canopy.add(box(0.22, 0.85, 0.22, M.steel, 1.2, 0.85, -5.2));
+  // cúpula de paracaídas (media esfera con paneles alternos)
+  const domeMatA = new THREE.MeshStandardMaterial({ color: 0xe8621c, roughness: 0.7, flatShading: true, side: THREE.DoubleSide });
+  const domeMatB = new THREE.MeshStandardMaterial({ color: 0xe8e4d8, roughness: 0.7, flatShading: true, side: THREE.DoubleSide });
+  const nPan = 8;
+  for (let i = 0; i < nPan; i++) {
+    const a0 = (i / nPan) * Math.PI * 2;
+    const a1 = ((i + 1) / nPan) * Math.PI * 2;
+    const pg = new THREE.SphereGeometry(3.1, 6, 6, a0, a1 - a0, 0, Math.PI / 2.15);
+    const pm = new THREE.Mesh(pg, i % 2 === 0 ? domeMatA : domeMatB);
+    pm.position.set(0, 3.6, 4.6);
+    canopy.add(pm);
+  }
+  // costillas radiales del paracaídas
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    const rib = box(0.08, 0.08, 3.1, M.steel, Math.cos(a) * 1.45, 3.6 + Math.sin(a) * 1.45 * 0.45, 4.6);
+    rib.rotation.z = a;
+    canopy.add(rib);
+  }
+  // suspentes (cuerdas) desde la cúpula hasta la cubierta
+  for (const [sx, sz] of [[-2.6, 2.4], [2.6, 2.4], [-2.6, 6.8], [2.6, 6.8]]) {
+    canopy.add(box(0.09, 3.2, 0.09, M.steel, sx, 2.0, sz));
+  }
+  // aro de la boca del paracaídas
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(3.05, 0.09, 6, 16), M.steel);
+  rim.rotation.x = Math.PI / 2;
+  rim.position.set(0, 3.6, 4.6);
+  canopy.add(rim);
   canopy.visible = false;
   g.add(canopy);
-  // soporte + planeador plegado arriba (se oculta al lanzarlo)
-  g.add(box(0.3, 1.0, 0.3, M.steel, -0.9, 1.6, -2.2));
-  g.add(box(0.3, 1.0, 0.3, M.steel, 0.9, 1.6, -2.2));
+
+  // ---- soporte + planeador plegado arriba (se oculta al lanzarlo) ----
+  g.add(box(0.3, 1.0, 0.3, M.steel, -0.9, 2.1, 0.4));
+  g.add(box(0.3, 1.0, 0.3, M.steel, 0.9, 2.1, 0.4));
   const rack = buildGlider(true);
   rack.name = "rackGlider";
   rack.scale.setScalar(0.8);
-  rack.position.set(0, 2.55, -2.2);
+  rack.position.set(0, 3.0, 0.4);
   g.add(rack);
-  // motor grande único
+
+  // ---- 15 motores grandes en popa (3 filas × 5) ----
   const enginePuffs: THREE.Object3D[] = [];
-  const e = new THREE.Group();
-  e.add(box(1.5, 1.5, 2.4, M.black, 0, 0.75, 0));
-  e.add(box(1.3, 0.6, 2.0, M.dark, 0, 1.7, -0.2));
-  e.position.set(0, 0.35, -9.4);
-  g.add(e);
-  const puff = new THREE.Object3D();
-  puff.position.set(0, 0.3, -10.8);
-  g.add(puff);
-  enginePuffs.push(puff);
-  // torreta a proa
+  for (let row = 0; row < 3; row++) {
+    for (let col = 0; col < 5; col++) {
+      const px = -2.4 + col * 1.2;
+      const pz = -11.2 - row * 1.35;
+      const e = new THREE.Group();
+      e.add(box(1.0, 1.5, 1.15, M.black, 0, 0.75, 0));
+      e.add(box(0.86, 0.55, 0.95, M.dark, 0, 1.65, -0.1));
+      e.add(box(0.34, 0.8, 0.3, M.steel, 0, -0.35, -0.45));
+      e.position.set(px, 1.5, pz);
+      g.add(e);
+      const puff = new THREE.Object3D();
+      puff.position.set(px, 1.35, pz - 1.0);
+      g.add(puff);
+      enginePuffs.push(puff);
+    }
+  }
+
+  // ---- torreta a proa ----
   const turret = new THREE.Group();
-  turret.position.set(0, 1.25, 6.2);
+  turret.position.set(0, 1.4, 10.4);
   turret.add(box(0.4, 0.5, 0.4, M.steel, 0, 0.25, 0));
   turret.add(box(0.26, 0.3, 1.5, M.black, 0, 0.72, 0.4));
   const muzzle = new THREE.Object3D();
   muzzle.position.set(0, 0.72, 2.2);
   turret.add(muzzle);
   g.add(turret);
-  const bowAnchor = new THREE.Object3D(); bowAnchor.position.set(0, 0.5, 15.4); g.add(bowAnchor);
-  const sternAnchor = new THREE.Object3D(); sternAnchor.position.set(0, 0.3, -10.6); g.add(sternAnchor);
+  const bowAnchor = new THREE.Object3D(); bowAnchor.position.set(0, 0.5, 17.4); g.add(bowAnchor);
+  const sternAnchor = new THREE.Object3D(); sternAnchor.position.set(0, 0.3, -15.4); g.add(sternAnchor);
   return { group: g, turret, muzzle, enginePuffs, bowAnchor, sternAnchor };
 }
 
