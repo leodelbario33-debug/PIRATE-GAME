@@ -1,0 +1,282 @@
+import { useEffect, useRef, useState } from "react";
+import type { CraftId } from "../game/types";
+import { CRAFTS } from "../game/types";
+
+function drawBlueprint(cv: HTMLCanvasElement, id: CraftId) {
+  const ctx = cv.getContext("2d");
+  if (!ctx) return;
+  const W = cv.width, H = cv.height;
+  ctx.clearRect(0, 0, W, H);
+  ctx.strokeStyle = "rgba(41,224,210,0.07)";
+  ctx.lineWidth = 1;
+  for (let x = 0; x < W; x += 18) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+  for (let y = 0; y < H; y += 18) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+  ctx.setLineDash([6, 5]);
+  ctx.strokeStyle = "rgba(41,224,210,0.35)";
+  ctx.beginPath(); ctx.moveTo(8, 128); ctx.lineTo(W - 8, 128); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.font = "600 10px Rajdhani, sans-serif";
+  ctx.fillStyle = "rgba(41,224,210,0.55)";
+  ctx.fillText("FLOTACIÓN", 10, 122);
+
+  const S = "rgba(41,224,210,0.9)";
+  const F = "rgba(41,224,210,0.08)";
+  ctx.lineWidth = 1.6;
+  ctx.strokeStyle = S;
+  ctx.fillStyle = F;
+
+  const poly = (pts: number[][], close = true) => {
+    ctx.beginPath();
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+    if (close) ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  };
+  const rect = (x: number, y: number, w: number, h: number) => poly([[x, y], [x + w, y], [x + w, y + h], [x, y + h]]);
+  const label = (t: string, x: number, y: number, col = "rgba(255,179,71,0.9)") => {
+    ctx.fillStyle = col;
+    ctx.fillText(t, x, y);
+  };
+
+  if (id === "viuda") {
+    // casco con proa muy larga de punta roma
+    poly([[40, 112], [240, 112], [318, 114], [334, 119], [322, 128], [296, 134], [262, 138], [40, 138]]);
+    ctx.beginPath(); ctx.moveTo(250, 125); ctx.lineTo(330, 121); ctx.stroke();
+    // tres pisos escalonados de proa a popa
+    rect(92, 92, 172, 20);
+    rect(110, 74, 138, 18);
+    rect(128, 58, 104, 16);
+    ctx.beginPath(); ctx.moveTo(98, 98); ctx.lineTo(258, 98); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(116, 80); ctx.lineTo(242, 80); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(134, 64); ctx.lineTo(226, 64); ctx.stroke();
+    // cuarto piso pequeño en popa
+    rect(58, 96, 28, 16);
+    // mástil y radar
+    ctx.beginPath(); ctx.moveTo(180, 58); ctx.lineTo(180, 42); ctx.stroke();
+    ctx.beginPath(); ctx.arc(180, 40, 4, 0, Math.PI * 2); ctx.stroke();
+    // torreta a proa
+    poly([[246, 98], [262, 98], [262, 112], [246, 112]]);
+    ctx.beginPath(); ctx.moveTo(262, 102); ctx.lineTo(288, 98); ctx.stroke();
+    // 8 motores en doble fila
+    for (let i = 0; i < 4; i++) { rect(34 + i * 15, 138, 11, 14); rect(34 + i * 15, 152, 11, 10); }
+    ctx.beginPath(); ctx.moveTo(39, 170); ctx.lineTo(90, 170); ctx.moveTo(39, 166); ctx.lineTo(39, 174); ctx.moveTo(90, 166); ctx.lineTo(90, 174); ctx.stroke();
+    label("8× 700 HP", 30, 186);
+    label("M2 .50", 242, 92);
+    label("3 PISOS · 490 NUDOS", 128, 106);
+  } else if (id === "fantasma") {
+    // casco con proa larga
+    poly([[58, 116], [262, 116], [322, 122], [296, 136], [58, 136]]);
+    // dos pisos de superestructura
+    rect(120, 96, 88, 20);
+    rect(136, 78, 62, 18);
+    ctx.beginPath(); ctx.moveTo(140, 100); ctx.lineTo(204, 100); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(146, 82); ctx.lineTo(192, 82); ctx.stroke();
+    // alerón trasero
+    ctx.beginPath(); ctx.moveTo(70, 104); ctx.lineTo(112, 104); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(82, 116); ctx.lineTo(76, 104); ctx.moveTo(104, 116); ctx.lineTo(108, 104); ctx.stroke();
+    // torreta a proa
+    ctx.beginPath(); ctx.arc(252, 108, 7, 0, Math.PI * 2); ctx.stroke();
+    for (let i = -1; i <= 1; i++) { ctx.beginPath(); ctx.moveTo(252, 108); ctx.lineTo(284, 104 + i * 4); ctx.stroke(); }
+    // motores
+    rect(40, 136, 12, 16); rect(58, 136, 12, 16);
+    label("MINIGUN M134", 224, 90);
+    label("2 PISOS", 140, 72);
+    label("PROA LARGA · 200 NUDOS", 110, 154);
+  } else if (id === "rayo") {
+    // catamarán ancho: dos cascos gemelos vistos de perfil + puente
+    poly([[70, 118], [250, 118], [300, 126], [288, 140], [70, 140]]);
+    poly([[84, 140], [268, 140], [256, 152], [92, 152]]);
+    rect(150, 102, 52, 16);
+    poly([[150, 102], [166, 92], [202, 92], [202, 102]]);
+    // alerón trasero
+    ctx.beginPath(); ctx.moveTo(84, 106); ctx.lineTo(118, 106); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(92, 118); ctx.lineTo(88, 106); ctx.moveTo(110, 118); ctx.lineTo(114, 106); ctx.stroke();
+    // 8 motores en la popa
+    for (let i = 0; i < 8; i++) rect(24 + i * 9.5, 122, 7, 22);
+    ctx.beginPath(); ctx.moveTo(28, 156); ctx.lineTo(96, 156); ctx.moveTo(28, 152); ctx.lineTo(28, 160); ctx.moveTo(96, 152); ctx.lineTo(96, 160); ctx.stroke();
+    label("8× 800 HP", 26, 174);
+    label("DARDOS RECTOS", 210, 88);
+    label("ANCHO 7 m", 150, 170);
+  } else if (id === "balista") {
+    // casco bajo de un piso
+    poly([[62, 118], [272, 118], [316, 124], [300, 138], [62, 138]]);
+    rect(150, 98, 64, 20);
+    ctx.beginPath(); ctx.moveTo(156, 104); ctx.lineTo(208, 104); ctx.stroke();
+    // batería: 4 tubos
+    for (let i = 0; i < 4; i++) { rect(86 + i * 14, 84, 9, 34); ctx.beginPath(); ctx.moveTo(90 + i * 14, 84); ctx.lineTo(90 + i * 14, 78); ctx.stroke(); }
+    // motores
+    rect(44, 138, 12, 15); rect(62, 138, 12, 15);
+    label("BATERÍA ×4", 60, 72);
+    label("1 PISO CORTO", 150, 92);
+    label("FIJACIÓN MANUAL · 5 km", 118, 156);
+  } else if (id === "bala") {
+    // casco fino y largo
+    poly([[56, 120], [266, 120], [330, 125], [304, 136], [56, 136]]);
+    // cabina cerrada aerodinámica
+    poly([[196, 120], [216, 104], [262, 104], [276, 120]]);
+    ctx.beginPath(); ctx.moveTo(222, 108); ctx.lineTo(258, 108); ctx.stroke();
+    // aletín trasero
+    ctx.beginPath(); ctx.moveTo(72, 106); ctx.lineTo(104, 106); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(84, 120); ctx.lineTo(80, 106); ctx.moveTo(98, 120); ctx.lineTo(102, 106); ctx.stroke();
+    // soporte + planeador plegado arriba
+    ctx.beginPath(); ctx.moveTo(128, 120); ctx.lineTo(128, 96); ctx.moveTo(158, 120); ctx.lineTo(158, 96); ctx.stroke();
+    poly([[118, 88], [168, 88], [160, 96], [126, 96]]);
+    ctx.beginPath(); ctx.moveTo(108, 92); ctx.lineTo(178, 92); ctx.stroke();
+    // motor grande único
+    rect(38, 136, 16, 16);
+    // torreta
+    ctx.beginPath(); ctx.arc(288, 112, 6, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(294, 112); ctx.lineTo(316, 108); ctx.stroke();
+    label("PLANEADOR", 100, 80);
+    label("M2", 288, 100);
+    label("540 NUDOS + PLANEADOR", 108, 156);
+  } else {
+    ctx.beginPath(); ctx.ellipse(182, 146, 118, 17, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(300, 146, 16, 12, 0, 0, Math.PI * 2); ctx.stroke();
+    rect(156, 106, 40, 40);
+    ctx.beginPath(); ctx.moveTo(176, 106); ctx.lineTo(176, 90); ctx.lineTo(184, 90); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(64, 146); ctx.lineTo(52, 138); ctx.moveTo(64, 146); ctx.lineTo(52, 154); ctx.stroke();
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath(); ctx.ellipse(230, 146, 22, 6, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]);
+    label("6× TORPEDOS MK-37", 196, 172);
+    label("VELA", 150, 100);
+    label("26 m", 150, 122);
+  }
+  ctx.strokeStyle = "rgba(255,179,71,0.5)";
+  ctx.lineWidth = 2;
+  const m = 6, L = 14;
+  const corners: [number, number, number, number][] = [[m, m, 1, 1], [W - m, m, -1, 1], [m, H - m, 1, -1], [W - m, H - m, -1, -1]];
+  for (const [cx, cy, sx, sy] of corners) {
+    ctx.beginPath(); ctx.moveTo(cx, cy + sy * L); ctx.lineTo(cx, cy); ctx.lineTo(cx + sx * L, cy); ctx.stroke();
+  }
+}
+
+function StatPips({ label, v }: { label: string; v: number }) {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <span className="text-[11px] tracking-[0.15em] text-white/50 w-20">{label}</span>
+      <div className="flex gap-1">
+        {[1, 2, 3, 4, 5].map((i) => (
+          <div key={i} className="stat-seg w-5 h-2" style={{ background: i <= v ? "linear-gradient(90deg,#ff7a1a,#ffb347)" : "rgba(255,255,255,0.1)" }} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CraftCard({ id, selected, onPick, delay }: { id: CraftId; selected: boolean; onPick: () => void; delay: string }) {
+  const def = CRAFTS[id];
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    if (ref.current) drawBlueprint(ref.current, id);
+  }, [id]);
+  return (
+    <button
+      onClick={onPick}
+      className={`card-craft hud-panel text-left px-4 pt-4 pb-4 w-[300px] floaty ${selected ? "!border-[#ffb347] shadow-[0_0_30px_rgba(255,122,26,0.28)]" : ""}`}
+      style={{ animationDelay: delay }}
+    >
+      <div className="flex items-baseline justify-between">
+        <span className="hud-title text-xl text-white">{def.name}</span>
+        {selected && <span className="hud-title text-[10px] text-[#ffb347] tracking-widest">ELEGIDA</span>}
+      </div>
+      <div className="text-[11px] tracking-[0.2em] text-[#29e0d2] mb-2">{def.cls}</div>
+      <canvas ref={ref} width={268} height={184} className="w-full bg-[#04121b] border border-[rgba(41,224,210,0.2)]" />
+      <p className="text-[12.5px] text-white/65 leading-snug mt-2.5 min-h-[54px]">{def.desc}</p>
+      <div className="flex flex-col gap-1 mt-2">
+        <StatPips label="VELOCIDAD" v={def.stats.velocidad} />
+        <StatPips label="VIRAJE" v={def.stats.viraje} />
+        <StatPips label="BLINDAJE" v={def.stats.blindaje} />
+        <StatPips label="POTENCIA" v={def.stats.potencia} />
+      </div>
+      <div className="mt-2 pt-2 border-t border-white/10 flex items-center justify-between gap-2 text-[11px]">
+        <span className="text-white/45 truncate">{def.weaponName}</span>
+        <span className="flex items-center gap-2 shrink-0">
+          <span className="font-mono font-bold text-[#ffce73]">{def.displayKnots} kn</span>
+          {def.torpedoes > 0 && <span className="text-[#ffb347] font-bold">{def.torpedoes} TORPEDOS</span>}
+          {def.missiles > 0 && <span className="text-[#ff6a5e] font-bold">{def.missiles} MISILES</span>}
+        </span>
+      </div>
+    </button>
+  );
+}
+
+function WaveLayer({ cls, opacity, color, bottom }: { cls: string; opacity: number; color: string; bottom: number }) {
+  const path = "M0,60 C120,20 240,100 360,60 C480,20 600,100 720,60 C840,20 960,100 1080,60 C1200,20 1320,100 1440,60 L1440,140 L0,140 Z";
+  return (
+    <div className={`pointer-events-none absolute left-0 w-[200%] ${cls}`} style={{ bottom, opacity }}>
+      <svg width="50%" height="140" viewBox="0 0 1440 140" preserveAspectRatio="none" className="inline-block align-bottom">
+        <path d={path} fill={color} />
+      </svg><svg width="50%" height="140" viewBox="0 0 1440 140" preserveAspectRatio="none" className="inline-block align-bottom">
+        <path d={path} fill={color} />
+      </svg>
+    </div>
+  );
+}
+
+export default function MenuScreen({ onStart }: { onStart: (id: CraftId) => void }) {
+  const [sel, setSel] = useState<CraftId>("viuda");
+  return (
+    <div className="relative w-full h-full overflow-y-auto overflow-x-hidden font-[family-name:var(--font-ui)]"
+      style={{ background: "radial-gradient(1200px 700px at 75% -10%, #14424e 0%, #071823 45%, #030b12 100%)" }}>
+      <div className="pointer-events-none absolute" style={{ left: "68%", top: "-90px", width: 340, height: 340, borderRadius: "50%", background: "radial-gradient(circle, rgba(255,140,60,0.5) 0%, rgba(255,110,40,0.12) 45%, transparent 70%)" }} />
+      <WaveLayer cls="wave-drift-slow" opacity={0.5} color="#062028" bottom={-20} />
+      <WaveLayer cls="wave-drift" opacity={0.8} color="#04161f" bottom={-60} />
+      <div className="pointer-events-none absolute right-[6%] bottom-[14%] w-56 h-56 rounded-full border border-[rgba(41,224,210,0.25)]">
+        <div className="sonar-ping absolute inset-0 rounded-full border-2 border-[rgba(41,224,210,0.5)]" />
+        <div className="sonar-ping absolute inset-0 rounded-full border border-[rgba(41,224,210,0.35)]" style={{ animationDelay: "1.2s" }} />
+      </div>
+
+      <div className="relative z-10 max-w-[1200px] mx-auto px-6 py-8">
+        <header className="mb-6">
+          <div className="text-[12px] tracking-[0.5em] text-[#29e0d2] mb-1">OPERACIÓN NO AUTORIZADA · COSTA DEL CARBÓN</div>
+          <h1 className="hud-title title-flicker text-[clamp(44px,7vw,84px)] leading-[0.95] text-white" style={{ textShadow: "0 0 40px rgba(255,122,26,0.35), 0 4px 0 #041018" }}>
+            MAREA <span className="text-[#ff7a1a]">NEGRA</span>
+          </h1>
+          <p className="text-white/70 max-w-[640px] text-[15px] leading-snug mt-3">
+            No hay galeones ni parches en el ojo: esto es piratería del siglo XXI. Pilota una narcolancha de cuatro motores
+            o un minisubmarino, caza cargueros, yates y transatlánticos en un mar inmenso, tumba al jefe de seguridad,
+            apunta al capitán y <b className="text-[#ffb347]">conviértete tú en el capitán</b> antes de que la policía marítima te dé el alto.
+          </p>
+        </header>
+
+        <div className="text-[12px] tracking-[0.35em] text-[#ffb347] hud-title mb-3">— ELIGE TU EMBARCACIÓN —</div>
+        <div className="flex flex-wrap gap-4 items-stretch">
+          {(["viuda", "fantasma", "tiburon", "kraken", "rayo", "balista", "bala"] as CraftId[]).map((id, i) => (
+            <CraftCard key={id} id={id} selected={sel === id} onPick={() => setSel(id)} delay={`${i * 0.6}s`} />
+          ))}
+          <div className="flex-1 min-w-[260px] flex flex-col gap-3">
+            <div className="hud-panel px-4 py-3">
+              <div className="hud-title text-[12px] text-[#29e0d2] mb-2">MANUAL DEL ATRACADOR</div>
+              <ol className="text-[13px] text-white/70 space-y-1.5 list-decimal list-inside leading-snug">
+                <li>Detecta el barco en el radar y acércate con prismáticos (clic der.).</li>
+                <li>Los lados del barco están cubiertos: entra por <b className="text-[#ffb347]">proa o popa</b> (zona ciega) y pulsa <b className="text-[#29e0d2]">E</b>.</li>
+                <li>En cubierta esquiva la <b className="text-[#ff5a4a]">red eléctrica</b> de las barandillas y tumba al <b className="text-[#ff5a4a]">jefe de seguridad</b>.</li>
+                <li>Apunta al capitán en el puente y mantén <b className="text-[#29e0d2]">E</b>: el barco será tuyo.</li>
+                <li>Llévalo al punto de venta dorado sin que te hundan… y repite.</li>
+              </ol>
+            </div>
+            <div className="hud-panel px-4 py-3">
+              <div className="hud-title text-[12px] text-[#29e0d2] mb-2">CONSEJOS DE SUPERVIVENCIA</div>
+              <ul className="text-[13px] text-white/70 space-y-1 leading-snug">
+                <li>▸ Con el submarino: lanza torpedos bajo el agua; los cascos pesados giran lento, pero giran.</li>
+                <li>▸ Sumérgete (C) y la patrulla perderá tu rastro.</li>
+                <li>▸ Si te detienes junto a una patrullera, te arrestan en 3 segundos. No te pares.</li>
+                <li>▸ Hundir tu presa con torpedos hunde también su mercancía.</li>
+              </ul>
+            </div>
+            <button
+              onClick={() => onStart(sel)}
+              className="btn-naval bg-[#ff7a1a] text-black px-6 py-4 text-2xl mt-auto shadow-[0_0_40px_rgba(255,122,26,0.35)]"
+            >
+              ⚓ ZARPAR — INICIAR ATRACO
+            </button>
+            <div className="text-[11px] text-white/35 tracking-widest text-center">TECLADO + RATÓN OBLIGATORIOS · EL JUEGO BLOQUEA EL CURSOR AL ENTRAR</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
