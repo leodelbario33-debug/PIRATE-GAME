@@ -240,7 +240,8 @@ export class Game {
     this.scene.add(this.flashLight);
 
     // cuerda de abordaje con garfio (se tensa en la zona ciega)
-    this.ropeGeo.setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 1, 0)]);
+    const positions = new Float32Array([0, 0, 0, 0, 1, 0]);
+    this.ropeGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     this.ropeLine = new THREE.Line(this.ropeGeo, new THREE.LineBasicMaterial({ color: 0xe8c26a, transparent: true, opacity: 0.95 }));
     this.ropeLine.visible = false;
     this.ropeLine.frustumCulled = false;
